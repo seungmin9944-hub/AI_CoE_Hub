@@ -1,0 +1,15 @@
+import { sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const posts = sqliteTable("posts", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  excerpt: text("excerpt").notNull(),
+  category: text("category").notNull(),
+  author: text("author").notNull(),
+  publishedAt: text("published_at").notNull(),
+  readTime: text("read_time").notNull(),
+  tags: text("tags").notNull(),
+  blocks: text("blocks").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
