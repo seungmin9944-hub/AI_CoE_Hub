@@ -38,6 +38,7 @@ export type Post = {
   author: string;
   publishedAt: string;
   readTime: string;
+  tocTitle: string;
   tags: string[];
   blocks: ContentBlock[];
 };
@@ -51,6 +52,7 @@ export const seedPost: Post = {
   author: "AI CoE",
   publishedAt: "2026. 7. 12.",
   readTime: "18분",
+  tocTitle: "ON THIS PAGE",
   tags: ["Cloudflare", "Excel", "Dashboard", "R2"],
   blocks: [
     { id: "b01", type: "callout", tone: "warning", text: "▶️ 유튜브 영상 바로가기\n이 글과 함께 영상을 보며 순서대로 실습해 보세요." },

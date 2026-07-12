@@ -1,10 +1,23 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { seedPost, type ContentBlock, type Post, type TableBlock } from "./content";
 
 const categories = ["전체 콘텐츠", "프롬프트", "AI 트렌드", "업무 자동화"];
+const categoryOptions = ["프롬프트", "AI 트렌드", "업무 자동화"];
 const ideaMailto = "mailto:seungmin.kim@hanwha.com,ghcho08@hanwha.com,taewonkim@hanwha.com,semin1000@hanwha.com?subject=%5BAI%20CoE%5D%20AI%20%ED%99%9C%EC%9A%A9%20%EC%95%84%EC%9D%B4%EB%94%94%EC%96%B4%20%EC%A0%9C%EC%95%88";
+const attachmentAccept = ".pdf,.ppt,.pptx,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.zip,.doc,.docx,.txt,.html";
+
+type Pagination = {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+};
+
+const emptyPagination: Pagination = { page: 1, pageSize: 1, totalItems: 0, totalPages: 0, hasPrevious: false, hasNext: false };
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -16,18 +29,24 @@ function CopyButton({ value }: { value: string }) {
   return <button className="copy-button" onClick={copy} aria-label="코드 복사">{copied ? "복사 완료" : "복사"}</button>;
 }
 
-function BlockView({ block, editing, onChange, onDelete }: {
+function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplaceFile, onDragStart, onDragEnter, onDrop, onDragEnd, isDragging, isDropTarget }: {
   block: ContentBlock;
   editing: boolean;
   onChange: (next: ContentBlock) => void;
   onDelete: () => void;
+  onInsertAfter: () => void;
+  onReplaceFile: (file: File) => void;
+  onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
+  onDragEnter: () => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+  isDragging: boolean;
+  isDropTarget: boolean;
 }) {
-  const editor = (className: string, multiline = true) => {
+  const editor = (className: string) => {
     if (!("text" in block)) return null;
-    return editing ? (
-      <textarea className={`block-input ${className}`} value={block.text} rows={multiline ? Math.max(1, block.text.split("\n").length) : 1}
-        onChange={(event) => onChange({ ...block, text: event.target.value })} aria-label="블록 내용 편집" />
-    ) : <span>{block.text}</span>;
+    return editing ? <textarea className={`block-input ${className}`} value={block.text} rows={Math.max(1, block.text.split("\n").length)}
+      onChange={(event) => onChange({ ...block, text: event.target.value })} aria-label="블록 내용 편집" /> : <span>{block.text}</span>;
   };
 
   let content: React.ReactNode;
@@ -41,63 +60,141 @@ function BlockView({ block, editing, onChange, onDelete }: {
     content = <div className="code-card"><div className="code-top"><span>{block.language === "prompt" ? "PROMPT" : block.language?.toUpperCase()}</span><CopyButton value={block.text} /></div>{editing ? editor("code-input") : <pre><code>{block.text}</code></pre>}</div>;
   } else if (block.type === "attachment") {
     content = editing ? <div className="attachment attachment-editing"><span className="attachment-icon">↓</span><div className="attachment-fields">
-      <label>파일명<input value={block.name} onChange={(e) => onChange({ ...block, name: e.target.value })} /></label>
-      <label>다운로드 경로<input value={block.url} onChange={(e) => onChange({ ...block, url: e.target.value })} /></label>
-      <label>표시 용량<input value={block.size} onChange={(e) => onChange({ ...block, size: e.target.value })} /></label>
-    </div><a className="download-label" href={block.url} download>다운로드 확인</a></div>
+      <label>파일명<input value={block.name} onChange={(event) => onChange({ ...block, name: event.target.value })} /></label>
+      <label>다운로드 경로<input value={block.url} onChange={(event) => onChange({ ...block, url: event.target.value })} /></label>
+      <label>표시 용량<input value={block.size} onChange={(event) => onChange({ ...block, size: event.target.value })} /></label>
+    </div><div className="attachment-actions"><label className="replace-file-button">파일 교체<input type="file" accept={attachmentAccept} onChange={(event) => { const file = event.target.files?.[0]; if (file) onReplaceFile(file); event.target.value = ""; }} /></label><a className="download-label" href={block.url} download>다운로드 확인</a></div></div>
       : <a className="attachment" href={block.url} download><span className="attachment-icon">↓</span><span><strong>{block.name}</strong><small>{block.size} · 첨부파일</small></span><span className="download-label">다운로드</span></a>;
   } else if (block.type === "image") {
-    content = <figure className="article-image"><img src={block.url} alt={block.caption || "게시물 이미지"} />{editing ? <input value={block.caption} onChange={(e) => onChange({ ...block, caption: e.target.value })} placeholder="이미지 설명" /> : <figcaption>{block.caption}</figcaption>}</figure>;
+    content = <figure className="article-image"><img src={block.url} alt={block.caption || "게시물 이미지"} />{editing && <label className="replace-file-button image-replace">이미지 교체<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) onReplaceFile(file); event.target.value = ""; }} /></label>}{editing ? <input value={block.caption} onChange={(event) => onChange({ ...block, caption: event.target.value })} placeholder="이미지 설명" /> : <figcaption>{block.caption}</figcaption>}</figure>;
   } else {
     const table = block as TableBlock;
     content = <div className="table-wrap"><table><tbody>{table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => {
       const Tag = rowIndex === 0 ? "th" : "td";
-      return <Tag key={cellIndex}>{editing ? <input value={cell} onChange={(e) => {
-        const rows = table.rows.map((current, r) => current.map((value, c) => r === rowIndex && c === cellIndex ? e.target.value : value));
+      return <Tag key={cellIndex}>{editing ? <input value={cell} onChange={(event) => {
+        const rows = table.rows.map((current, r) => current.map((value, c) => r === rowIndex && c === cellIndex ? event.target.value : value));
         onChange({ ...table, rows });
       }} /> : cell}</Tag>;
     })}</tr>)}</tbody></table></div>;
   }
 
-  return <div id={block.id} className={`content-block ${editing ? "is-editing" : ""}`}>{editing && <button className="delete-block" onClick={onDelete} aria-label="블록 삭제">×</button>}{content}</div>;
+  return <div id={block.id} className={`content-block ${editing ? "is-editing" : ""} ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""}`}
+    onDragOver={(event) => { if (editing) event.preventDefault(); }} onDragEnter={() => editing && onDragEnter()} onDrop={(event) => { if (editing) { event.preventDefault(); onDrop(); } }}>
+    {editing && <div className="block-controls"><button className="drag-handle" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} aria-label="블록 순서 이동">⋮⋮</button><button className="delete-block" onClick={onDelete} aria-label="블록 삭제">×</button></div>}
+    {content}
+    {editing && <button className="insert-after" onClick={onInsertAfter}>＋ 이 아래에 텍스트 추가</button>}
+  </div>;
 }
 
 const slashOptions = [
   { type: "code", label: "코드", hint: "코드 또는 프롬프트 블록", symbol: "</>" },
-  { type: "image", label: "이미지", hint: "파일을 업로드해 삽입", symbol: "▧" },
+  { type: "image", label: "이미지", hint: "이미지 파일을 본문에 삽입", symbol: "▧" },
   { type: "callout", label: "콜아웃", hint: "강조할 안내문", symbol: "!" },
   { type: "table", label: "표", hint: "3 × 3 기본 표", symbol: "▦" },
   { type: "attachment", label: "첨부파일", hint: "PDF, PPT, PNG, XLSX 등 업로드", symbol: "↑" },
 ] as const;
 
 export function AICoeHub() {
-  const [post, setPost] = useState<Post>(seedPost);
+  const [post, setPost] = useState<Post | null>(seedPost);
+  const [pagination, setPagination] = useState<Pagination>(emptyPagination);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [admin, setAdmin] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [draftText, setDraftText] = useState("");
+  const [newTocTitle, setNewTocTitle] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("전체 콘텐츠");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [activeHeadingId, setActiveHeadingId] = useState("");
+  const [indicator, setIndicator] = useState({ top: 0, height: 0 });
   const imageInput = useRef<HTMLInputElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
+  const tocLinksRef = useRef<HTMLDivElement>(null);
+  const tocItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
-    fetch(`/api/posts?slug=${seedPost.slug}`)
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then(setPost)
-      .finally(() => setLoading(false));
-  }, []);
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      const params = new URLSearchParams({ page: String(page), limit: "1" });
+      if (category !== "전체 콘텐츠") params.set("category", category);
+      if (search.trim()) params.set("q", search.trim());
+      try {
+        const response = await fetch(`/api/posts?${params.toString()}`, { signal: controller.signal });
+        if (!response.ok) throw new Error("load failed");
+        const result = await response.json();
+        setPost(result.items[0] ?? null);
+        setPagination(result.pagination);
+        if (result.pagination.page !== page) setPage(result.pagination.page);
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, search ? 220 : 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [category, page, search, refreshKey]);
 
-  const headings = useMemo(() => post.blocks.filter((block) => block.type === "heading").slice(0, 5), [post.blocks]);
-  const matchesSearch = !search || `${post.title} ${post.excerpt} ${post.tags.join(" ")} ${post.blocks.map((block) => "text" in block ? block.text : "").join(" ")}`.toLowerCase().includes(search.toLowerCase());
-  const categoryHasContent = category === "전체 콘텐츠" || category === "업무 자동화";
+  const headings = useMemo(() => post?.blocks.filter((block) => block.type === "heading") ?? [], [post?.blocks]);
   const showSlashMenu = /(^|\s)\/[^\s/]*$/.test(draftText);
 
+  useEffect(() => {
+    if (!headings.length) { setActiveHeadingId(""); return; }
+    function updateActiveHeading() {
+      let active = headings[0].id;
+      for (const heading of headings) {
+        const element = document.getElementById(heading.id);
+        if (element && element.getBoundingClientRect().top <= 190) active = heading.id;
+      }
+      setActiveHeadingId(active);
+    }
+    updateActiveHeading();
+    window.addEventListener("scroll", updateActiveHeading, { passive: true });
+    window.addEventListener("resize", updateActiveHeading);
+    return () => { window.removeEventListener("scroll", updateActiveHeading); window.removeEventListener("resize", updateActiveHeading); };
+  }, [headings]);
+
+  useEffect(() => {
+    const item = tocItemRefs.current[activeHeadingId];
+    const container = tocLinksRef.current;
+    if (!item || !container) { setIndicator({ top: 0, height: 0 }); return; }
+    setIndicator({ top: item.offsetTop, height: item.offsetHeight });
+  }, [activeHeadingId, headings, admin]);
+
   function updateBlock(id: string, next: ContentBlock) {
-    setPost((current) => ({ ...current, blocks: current.blocks.map((block) => block.id === id ? next : block) }));
+    setPost((current) => current ? { ...current, blocks: current.blocks.map((block) => block.id === id ? next : block) } : current);
+    setSaved(false);
+  }
+
+  function insertParagraphAfter(id: string) {
+    const newBlock: ContentBlock = { id: `paragraph-${Date.now()}`, type: "paragraph", text: "새 텍스트를 입력하세요." };
+    setPost((current) => {
+      if (!current) return current;
+      const index = current.blocks.findIndex((block) => block.id === id);
+      const blocks = [...current.blocks];
+      blocks.splice(index + 1, 0, newBlock);
+      return { ...current, blocks };
+    });
+    setSaved(false);
+  }
+
+  function moveBlock(sourceId: string, targetId: string) {
+    if (sourceId === targetId) return;
+    setPost((current) => {
+      if (!current) return current;
+      const blocks = [...current.blocks];
+      const sourceIndex = blocks.findIndex((block) => block.id === sourceId);
+      const targetIndex = blocks.findIndex((block) => block.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return current;
+      const [moved] = blocks.splice(sourceIndex, 1);
+      blocks.splice(targetIndex, 0, moved);
+      return { ...current, blocks };
+    });
     setSaved(false);
   }
 
@@ -111,12 +208,10 @@ export function AICoeHub() {
 
   function addBlock(type: "code" | "callout" | "table") {
     const id = `block-${Date.now()}`;
-    const block: ContentBlock = type === "table"
-      ? { id, type, rows: [["항목", "내용", "비고"], ["", "", ""], ["", "", ""]] }
-      : type === "code"
-        ? { id, type, language: "prompt", text: "여기에 코드 또는 프롬프트를 입력하세요." }
+    const block: ContentBlock = type === "table" ? { id, type, rows: [["항목", "내용", "비고"], ["", "", ""], ["", "", ""]] }
+      : type === "code" ? { id, type, language: "prompt", text: "여기에 코드 또는 프롬프트를 입력하세요." }
         : { id, type, tone: "info", text: "강조할 내용을 입력하세요." };
-    setPost((current) => ({ ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] }));
+    setPost((current) => current ? { ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] } : current);
     setDraftText("");
     setSaved(false);
   }
@@ -124,8 +219,17 @@ export function AICoeHub() {
   function addParagraph() {
     const additions = blocksWithDraft();
     if (!additions.length) return;
-    setPost((current) => ({ ...current, blocks: [...current.blocks, ...additions] }));
+    setPost((current) => current ? { ...current, blocks: [...current.blocks, ...additions] } : current);
     setDraftText("");
+    setSaved(false);
+  }
+
+  function addTocHeading() {
+    if (!newTocTitle.trim()) return;
+    const block: ContentBlock = { id: `heading-${Date.now()}`, type: "heading", text: newTocTitle.trim() };
+    setPost((current) => current ? { ...current, blocks: [...current.blocks, block] } : current);
+    setNewTocTitle("");
+    setActiveHeadingId(block.id);
     setSaved(false);
   }
 
@@ -135,9 +239,7 @@ export function AICoeHub() {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   }
 
-  async function uploadFile(event: ChangeEvent<HTMLInputElement>, kind: "image" | "attachment") {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  async function uploadAsset(file: File) {
     setUploading(true);
     setUploadError("");
     const form = new FormData();
@@ -147,40 +249,65 @@ export function AICoeHub() {
       const result = await response.json().catch(() => ({ error: "파일 업로드에 실패했습니다." }));
       setUploadError(result.error ?? "파일 업로드에 실패했습니다.");
       setUploading(false);
-      event.target.value = "";
-      return;
+      return null;
     }
     const result = await response.json();
-    const block: ContentBlock = kind === "image"
-      ? { id: `block-${Date.now()}`, type: "image", url: result.url, caption: file.name }
-      : { id: `block-${Date.now()}`, type: "attachment", url: result.url, name: file.name, size: formatFileSize(result.size) };
-    setPost((current) => ({ ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] }));
-    setDraftText("");
-    setSaved(false);
     setUploading(false);
+    return result as { url: string; name: string; size: number };
+  }
+
+  async function uploadFile(event: ChangeEvent<HTMLInputElement>, kind: "image" | "attachment") {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const result = await uploadAsset(file);
+    if (result) {
+      const block: ContentBlock = kind === "image" ? { id: `block-${Date.now()}`, type: "image", url: result.url, caption: file.name }
+        : { id: `block-${Date.now()}`, type: "attachment", url: result.url, name: file.name, size: formatFileSize(result.size) };
+      setPost((current) => current ? { ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] } : current);
+      setDraftText("");
+      setSaved(false);
+    }
     event.target.value = "";
   }
 
+  async function replaceBlockFile(block: ContentBlock, file: File) {
+    const result = await uploadAsset(file);
+    if (!result) return;
+    if (block.type === "attachment") updateBlock(block.id, { ...block, url: result.url, name: file.name, size: formatFileSize(result.size) });
+    if (block.type === "image") updateBlock(block.id, { ...block, url: result.url, caption: file.name });
+  }
+
   async function savePost() {
+    if (!post) return;
     setSaving(true);
     const response = await fetch("/api/posts", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(post) });
     setSaving(false);
     if (response.ok) { setSaved(true); window.setTimeout(() => setSaved(false), 2200); }
   }
 
+  async function createPost() {
+    setCreating(true);
+    const targetCategory = category === "전체 콘텐츠" ? "업무 자동화" : category;
+    const response = await fetch("/api/posts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ category: targetCategory }) });
+    const created = response.ok ? await response.json() as Post : null;
+    setCreating(false);
+    if (created) { setCategory(targetCategory); setPage(1); setPost(created); setRefreshKey((value) => value + 1); }
+  }
+
   return <div className="site-shell">
     <header className="topbar">
       <a className="brand" href="#top" aria-label="AI CoE Hub 홈"><span className="brand-mark">H</span><span><strong>AI CoE</strong><small>ESSENTIAL HUB</small></span></a>
-      <label className="search"><span>⌕</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="콘텐츠, 프롬프트 검색" aria-label="콘텐츠 검색" /><kbd>⌘ K</kbd></label>
+      <label className="search"><span>⌕</span><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="콘텐츠, 프롬프트 검색" aria-label="콘텐츠 검색" /><kbd>⌘ K</kbd></label>
       <div className="header-actions">
-        {admin && <button className="save-button" onClick={savePost} disabled={saving}>{saving ? "저장 중…" : saved ? "저장 완료 ✓" : "변경사항 저장"}</button>}
+        {admin && <button className="create-post-button" onClick={createPost} disabled={creating}>{creating ? "생성 중…" : "＋ 새 콘텐츠"}</button>}
+        {admin && post && <button className="save-button" onClick={savePost} disabled={saving}>{saving ? "저장 중…" : saved ? "저장 완료 ✓" : "변경사항 저장"}</button>}
         <button className={`admin-toggle ${admin ? "active" : ""}`} onClick={() => setAdmin(!admin)}><span>{admin ? "◆" : "◇"}</span>{admin ? "관리자 편집 중" : "관리자 모드"}</button>
       </div>
     </header>
 
     <div className="workspace" id="top">
       <aside className="sidebar">
-        <nav><p className="nav-label">EXPLORE</p>{categories.map((item, index) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}><span>{["⌂", "✦", "↗", "⚡"][index]}</span>{item}{item === "업무 자동화" && <em>1</em>}</button>)}</nav>
+        <nav><p className="nav-label">EXPLORE</p>{categories.map((item, index) => <button key={item} className={category === item ? "active" : ""} onClick={() => { setCategory(item); setPage(1); }}><span>{["⌂", "✦", "↗", "⚡"][index]}</span>{item}{item === "업무 자동화" && category === item && pagination.totalItems > 0 && <em>{pagination.totalItems}</em>}</button>)}</nav>
         <div className="sidebar-card"><span>✦</span><strong>AI 활용 아이디어가 있나요?</strong><p>AI CoE에 새로운 콘텐츠를 제안해 주세요.</p><a href={ideaMailto}>아이디어 제안</a></div>
         <footer>HANWHA ESSENTIAL<br />AI Center of Excellence</footer>
       </aside>
@@ -188,42 +315,55 @@ export function AICoeHub() {
       <main className="main-area">
         <section className="collection-head">
           <div><span className="eyebrow">KNOWLEDGE LIBRARY</span><h1>일하는 방식을 바꾸는<br /><em>AI 지식과 실습</em></h1><p>검증된 프롬프트와 실습 자료를 바로 복사하고, 다운로드해 업무에 적용해 보세요.</p></div>
-          <div className="stat-card"><span>이번 달 새 콘텐츠</span><strong>08</strong><small>지난달보다 3개 더</small><i>↗</i></div>
+          <div className="stat-card"><span>현재 카테고리 콘텐츠</span><strong>{String(pagination.totalItems).padStart(2, "0")}</strong><small>백엔드에 저장된 게시물</small><i>↗</i></div>
         </section>
 
-        <section className="section-title"><div><span className="live-dot" />FEATURED GUIDE</div><p>{category === "전체 콘텐츠" ? "AI CoE가 엄선한 최신 가이드" : category}</p></section>
+        <section className="section-title"><div><span className="live-dot" />FEATURED CONTENT</div><p>{category === "전체 콘텐츠" ? "AI CoE가 엄선한 최신 콘텐츠" : category}</p></section>
 
-        {!categoryHasContent || !matchesSearch ? <div className="empty-state"><span>⌕</span><h2>{categoryHasContent ? "검색 결과가 없습니다" : `${category} 콘텐츠를 준비하고 있습니다`}</h2><p>{categoryHasContent ? "다른 키워드로 다시 찾아보세요." : "새로운 콘텐츠가 등록되면 이곳에서 확인할 수 있습니다."}</p></div> : <article className={`article ${admin ? "admin-article" : ""}`}>
-          <div className="article-cover"><div className="cover-grid" /><span className="cover-badge">CLOUDFLARE × EXCEL</span><div className="cloud-orbit"><span>☁</span></div><div className="cover-copy"><small>HANDS-ON LAB · 01</small><strong>DATA TO<br /><em>LIVE WEB</em></strong><p>엑셀 보고서를 실시간 대시보드로</p></div></div>
-          <div className="article-body">
-            <div className="article-meta"><span>{post.category}</span><span>{post.publishedAt}</span><span>{post.readTime} 읽기</span></div>
-            {admin ? <textarea className="title-editor" value={post.title} onChange={(e) => setPost({ ...post, title: e.target.value })} aria-label="제목 편집" /> : <h2 className="article-title">{post.title}</h2>}
-            {admin ? <textarea className="excerpt-editor" value={post.excerpt} onChange={(e) => setPost({ ...post, excerpt: e.target.value })} aria-label="요약 편집" /> : <p className="article-excerpt">{post.excerpt}</p>}
-            <div className="byline"><span className="avatar">AI</span><div><strong>{post.author}</strong><small>한화이센셜 AI Center of Excellence</small></div>{post.tags.map((tag) => <em key={tag}>#{tag}</em>)}</div>
-            <div className="article-rule" />
-            <div className="blocks">
-              {post.blocks.map((block) => <BlockView key={block.id} block={block} editing={admin} onChange={(next) => updateBlock(block.id, next)} onDelete={() => setPost((current) => ({ ...current, blocks: current.blocks.filter((item) => item.id !== block.id) }))} />)}
+        {!post && !loading ? <div className="empty-state"><span>⌕</span><h2>{search ? "검색 결과가 없습니다" : `${category} 콘텐츠를 준비하고 있습니다`}</h2><p>{admin ? "상단의 ‘새 콘텐츠’ 버튼으로 첫 게시물을 만들어 보세요." : "새로운 콘텐츠가 등록되면 이곳에서 확인할 수 있습니다."}</p></div> : post && <>
+          <article className={`article ${admin ? "admin-article" : ""}`}>
+            <div className="article-cover"><div className="cover-grid" /><span className="cover-badge">CLOUDFLARE × EXCEL</span><div className="cloud-orbit"><span>☁</span></div><div className="cover-copy"><small>HANDS-ON LAB · 01</small><strong>DATA TO<br /><em>LIVE WEB</em></strong><p>엑셀 보고서를 실시간 대시보드로</p></div></div>
+            <div className="article-body">
+              {admin ? <div className="article-meta meta-editing"><label>카테고리<input list="category-list" value={post.category} onChange={(event) => setPost({ ...post, category: event.target.value })} /></label><label>게시일<input value={post.publishedAt} onChange={(event) => setPost({ ...post, publishedAt: event.target.value })} /></label><label>읽기 시간<input value={post.readTime} onChange={(event) => setPost({ ...post, readTime: event.target.value })} /></label><datalist id="category-list">{categoryOptions.map((item) => <option key={item} value={item} />)}</datalist></div>
+                : <div className="article-meta"><span>{post.category}</span><span>{post.publishedAt}</span><span>{post.readTime} 읽기</span></div>}
+              {admin ? <textarea className="title-editor" value={post.title} onChange={(event) => setPost({ ...post, title: event.target.value })} aria-label="제목 편집" /> : <h2 className="article-title">{post.title}</h2>}
+              {admin ? <textarea className="excerpt-editor" value={post.excerpt} onChange={(event) => setPost({ ...post, excerpt: event.target.value })} aria-label="요약 편집" /> : <p className="article-excerpt">{post.excerpt}</p>}
+              <div className="byline"><span className="avatar">AI</span><div><strong>{post.author}</strong><small>한화이센셜 AI Center of Excellence</small></div>{post.tags.map((tag) => <em key={tag}>#{tag}</em>)}</div>
+              <div className="article-rule" />
+              <div className="blocks">
+                {post.blocks.map((block) => <BlockView key={block.id} block={block} editing={admin} onChange={(next) => updateBlock(block.id, next)}
+                  onDelete={() => setPost((current) => current ? { ...current, blocks: current.blocks.filter((item) => item.id !== block.id) } : current)} onInsertAfter={() => insertParagraphAfter(block.id)} onReplaceFile={(file) => replaceBlockFile(block, file)}
+                  onDragStart={(event) => { setDraggedId(block.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", block.id); }} onDragEnter={() => draggedId && setDropTargetId(block.id)}
+                  onDrop={() => { if (draggedId) moveBlock(draggedId, block.id); setDraggedId(null); setDropTargetId(null); }} onDragEnd={() => { setDraggedId(null); setDropTargetId(null); }} isDragging={draggedId === block.id} isDropTarget={dropTargetId === block.id && draggedId !== block.id} />)}
+              </div>
+
+              {admin && <div className="slash-editor">
+                <div className="slash-line"><span>＋</span><textarea value={draftText} onChange={(event) => setDraftText(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); addParagraph(); } }} rows={4} placeholder="새 내용을 입력하세요. '/'를 누르면 블록과 첨부파일을 추가할 수 있습니다." aria-label="새 내용 입력" /></div>
+                <div className="composer-actions"><span>Enter 줄바꿈 · ⌘/Ctrl + Enter 문단 추가</span><button onClick={addParagraph} disabled={!draftText.trim()}>내용 추가</button></div>
+                {showSlashMenu && <div className="slash-menu"><p>기본 블록</p>{slashOptions.map((option) => <button key={option.type} onClick={() => option.type === "image" ? imageInput.current?.click() : option.type === "attachment" ? attachmentInput.current?.click() : addBlock(option.type)}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
+                {uploading && <p className="upload-status">파일을 업로드하고 있습니다…</p>}{uploadError && <p className="upload-error">{uploadError}</p>}
+                <input ref={imageInput} className="visually-hidden" type="file" accept="image/*" onChange={(event) => uploadFile(event, "image")} />
+                <input ref={attachmentInput} className="visually-hidden" type="file" accept={attachmentAccept} onChange={(event) => uploadFile(event, "attachment")} />
+              </div>}
+
+              <div className="article-end"><span>HANWHA</span><p>AI를 가장 잘 쓰는 조직을 함께 만듭니다.</p></div>
             </div>
-
-            {admin && <div className="slash-editor">
-              <div className="slash-line"><span>＋</span><textarea value={draftText} onChange={(e) => setDraftText(e.target.value)} onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); addParagraph(); }
-              }} rows={4} placeholder="새 내용을 입력하세요. '/'를 누르면 블록과 첨부파일을 추가할 수 있습니다." aria-label="새 내용 입력" /></div>
-              <div className="composer-actions"><span>Enter 줄바꿈 · ⌘/Ctrl + Enter 문단 추가</span><button onClick={addParagraph} disabled={!draftText.trim()}>내용 추가</button></div>
-              {showSlashMenu && <div className="slash-menu"><p>기본 블록</p>{slashOptions.map((option) => <button key={option.type} onClick={() => option.type === "image" ? imageInput.current?.click() : option.type === "attachment" ? attachmentInput.current?.click() : addBlock(option.type)}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
-              {uploading && <p className="upload-status">파일을 업로드하고 있습니다…</p>}
-              {uploadError && <p className="upload-error">{uploadError}</p>}
-              <input ref={imageInput} className="visually-hidden" type="file" accept="image/*" onChange={(e) => uploadFile(e, "image")} />
-              <input ref={attachmentInput} className="visually-hidden" type="file" accept=".pdf,.ppt,.pptx,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.zip,.doc,.docx,.txt,.html" onChange={(e) => uploadFile(e, "attachment")} />
-            </div>}
-
-            <div className="article-end"><span>HANWHA</span><p>AI를 가장 잘 쓰는 조직을 함께 만듭니다.</p></div>
-          </div>
-        </article>}
+          </article>
+          {pagination.totalPages > 1 && <nav className="pagination" aria-label="콘텐츠 페이지 이동"><button onClick={() => { setPage((value) => Math.max(1, value - 1)); window.scrollTo({ top: 0, behavior: "smooth" }); }} disabled={!pagination.hasPrevious}>← 이전</button><span><strong>{pagination.page}</strong> / {pagination.totalPages}</span><button onClick={() => { setPage((value) => value + 1); window.scrollTo({ top: 0, behavior: "smooth" }); }} disabled={!pagination.hasNext}>다음 →</button></nav>}
+        </>}
       </main>
 
       <aside className="toc">
-        <div className="toc-inner"><p>ON THIS PAGE</p>{headings.map((heading, index) => <a key={heading.id} href={`#${heading.id}`}><span>{String(index + 1).padStart(2, "0")}</span>{"text" in heading ? heading.text.replace(/^[^가-힣A-Za-z\[]+/, "") : ""}</a>)}<div className="toc-progress"><span style={{ height: `${Math.min(100, 28 + post.blocks.length)}%` }} /></div></div>
+        {post && <div className="toc-inner">
+          {admin ? <input className="toc-title-editor" value={post.tocTitle} onChange={(event) => setPost({ ...post, tocTitle: event.target.value })} aria-label="목차 제목 편집" /> : <p>{post.tocTitle}</p>}
+          <div className="toc-links" ref={tocLinksRef}><div className="toc-progress"><span style={{ top: indicator.top, height: indicator.height }} /></div>
+            {headings.map((heading, index) => <div key={heading.id} ref={(element) => { tocItemRefs.current[heading.id] = element; }} className={`toc-row ${activeHeadingId === heading.id ? "active" : ""}`}>
+              <a href={`#${heading.id}`} onClick={() => setActiveHeadingId(heading.id)}><span>{String(index + 1).padStart(2, "0")}</span>{!admin && "text" in heading ? heading.text.replace(/^[^가-힣A-Za-z\[]+/, "") : ""}</a>
+              {admin && "text" in heading && <input value={heading.text} onChange={(event) => updateBlock(heading.id, { ...heading, text: event.target.value })} aria-label={`${index + 1}번 목차 편집`} />}
+            </div>)}
+          </div>
+          {admin && <div className="toc-add"><input value={newTocTitle} onChange={(event) => setNewTocTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addTocHeading(); }} placeholder="목차와 본문 제목 추가" /><button onClick={addTocHeading}>＋</button></div>}
+        </div>}
       </aside>
     </div>
     {loading && <div className="loading-toast">콘텐츠를 불러오는 중…</div>}
