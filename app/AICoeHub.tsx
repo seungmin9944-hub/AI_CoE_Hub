@@ -3,7 +3,8 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { seedPost, type ContentBlock, type Post, type TableBlock } from "./content";
 
-const categories = ["전체 콘텐츠", "실습 가이드", "프롬프트", "AI 트렌드", "업무 자동화"];
+const categories = ["전체 콘텐츠", "프롬프트", "AI 트렌드", "업무 자동화"];
+const ideaMailto = "mailto:seungmin.kim@hanwha.com,ghcho08@hanwha.com,taewonkim@hanwha.com,semin1000@hanwha.com?subject=%5BAI%20CoE%5D%20AI%20%ED%99%9C%EC%9A%A9%20%EC%95%84%EC%9D%B4%EB%94%94%EC%96%B4%20%EC%A0%9C%EC%95%88";
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -39,7 +40,12 @@ function BlockView({ block, editing, onChange, onDelete }: {
   } else if (block.type === "code") {
     content = <div className="code-card"><div className="code-top"><span>{block.language === "prompt" ? "PROMPT" : block.language?.toUpperCase()}</span><CopyButton value={block.text} /></div>{editing ? editor("code-input") : <pre><code>{block.text}</code></pre>}</div>;
   } else if (block.type === "attachment") {
-    content = <a className="attachment" href={block.url} download><span className="attachment-icon">↓</span><span><strong>{block.name}</strong><small>{block.size} · 실습파일</small></span><span className="download-label">다운로드</span></a>;
+    content = editing ? <div className="attachment attachment-editing"><span className="attachment-icon">↓</span><div className="attachment-fields">
+      <label>파일명<input value={block.name} onChange={(e) => onChange({ ...block, name: e.target.value })} /></label>
+      <label>다운로드 경로<input value={block.url} onChange={(e) => onChange({ ...block, url: e.target.value })} /></label>
+      <label>표시 용량<input value={block.size} onChange={(e) => onChange({ ...block, size: e.target.value })} /></label>
+    </div><a className="download-label" href={block.url} download>다운로드 확인</a></div>
+      : <a className="attachment" href={block.url} download><span className="attachment-icon">↓</span><span><strong>{block.name}</strong><small>{block.size} · 첨부파일</small></span><span className="download-label">다운로드</span></a>;
   } else if (block.type === "image") {
     content = <figure className="article-image"><img src={block.url} alt={block.caption || "게시물 이미지"} />{editing ? <input value={block.caption} onChange={(e) => onChange({ ...block, caption: e.target.value })} placeholder="이미지 설명" /> : <figcaption>{block.caption}</figcaption>}</figure>;
   } else {
@@ -61,6 +67,7 @@ const slashOptions = [
   { type: "image", label: "이미지", hint: "파일을 업로드해 삽입", symbol: "▧" },
   { type: "callout", label: "콜아웃", hint: "강조할 안내문", symbol: "!" },
   { type: "table", label: "표", hint: "3 × 3 기본 표", symbol: "▦" },
+  { type: "attachment", label: "첨부파일", hint: "PDF, PPT, PNG, XLSX 등 업로드", symbol: "↑" },
 ] as const;
 
 export function AICoeHub() {
@@ -69,10 +76,13 @@ export function AICoeHub() {
   const [admin, setAdmin] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [slash, setSlash] = useState("");
+  const [draftText, setDraftText] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("전체 콘텐츠");
   const imageInput = useRef<HTMLInputElement>(null);
+  const attachmentInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch(`/api/posts?slug=${seedPost.slug}`)
@@ -83,10 +93,20 @@ export function AICoeHub() {
 
   const headings = useMemo(() => post.blocks.filter((block) => block.type === "heading").slice(0, 5), [post.blocks]);
   const matchesSearch = !search || `${post.title} ${post.excerpt} ${post.tags.join(" ")} ${post.blocks.map((block) => "text" in block ? block.text : "").join(" ")}`.toLowerCase().includes(search.toLowerCase());
+  const categoryHasContent = category === "전체 콘텐츠" || category === "업무 자동화";
+  const showSlashMenu = /(^|\s)\/[^\s/]*$/.test(draftText);
 
   function updateBlock(id: string, next: ContentBlock) {
     setPost((current) => ({ ...current, blocks: current.blocks.map((block) => block.id === id ? next : block) }));
     setSaved(false);
+  }
+
+  function blocksWithDraft(block?: ContentBlock) {
+    const text = draftText.replace(/(^|\s)\/[^\s/]*$/, "$1").trimEnd();
+    const additions: ContentBlock[] = [];
+    if (text.trim()) additions.push({ id: `paragraph-${Date.now()}`, type: "paragraph", text });
+    if (block) additions.push(block);
+    return additions;
   }
 
   function addBlock(type: "code" | "callout" | "table") {
@@ -96,20 +116,48 @@ export function AICoeHub() {
       : type === "code"
         ? { id, type, language: "prompt", text: "여기에 코드 또는 프롬프트를 입력하세요." }
         : { id, type, tone: "info", text: "강조할 내용을 입력하세요." };
-    setPost((current) => ({ ...current, blocks: [...current.blocks, block] }));
-    setSlash("");
+    setPost((current) => ({ ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] }));
+    setDraftText("");
+    setSaved(false);
   }
 
-  async function uploadImage(event: ChangeEvent<HTMLInputElement>) {
+  function addParagraph() {
+    const additions = blocksWithDraft();
+    if (!additions.length) return;
+    setPost((current) => ({ ...current, blocks: [...current.blocks, ...additions] }));
+    setDraftText("");
+    setSaved(false);
+  }
+
+  function formatFileSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  async function uploadFile(event: ChangeEvent<HTMLInputElement>, kind: "image" | "attachment") {
     const file = event.target.files?.[0];
     if (!file) return;
+    setUploading(true);
+    setUploadError("");
     const form = new FormData();
     form.append("file", file);
     const response = await fetch("/api/files", { method: "POST", body: form });
-    if (!response.ok) return;
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({ error: "파일 업로드에 실패했습니다." }));
+      setUploadError(result.error ?? "파일 업로드에 실패했습니다.");
+      setUploading(false);
+      event.target.value = "";
+      return;
+    }
     const result = await response.json();
-    setPost((current) => ({ ...current, blocks: [...current.blocks, { id: `block-${Date.now()}`, type: "image", url: result.url, caption: file.name }] }));
-    setSlash("");
+    const block: ContentBlock = kind === "image"
+      ? { id: `block-${Date.now()}`, type: "image", url: result.url, caption: file.name }
+      : { id: `block-${Date.now()}`, type: "attachment", url: result.url, name: file.name, size: formatFileSize(result.size) };
+    setPost((current) => ({ ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] }));
+    setDraftText("");
+    setSaved(false);
+    setUploading(false);
     event.target.value = "";
   }
 
@@ -132,8 +180,8 @@ export function AICoeHub() {
 
     <div className="workspace" id="top">
       <aside className="sidebar">
-        <nav><p className="nav-label">EXPLORE</p>{categories.map((item, index) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}><span>{["⌂", "▤", "✦", "↗", "⚡"][index]}</span>{item}{index === 1 && <em>1</em>}</button>)}</nav>
-        <div className="sidebar-card"><span>✦</span><strong>AI 활용 아이디어가 있나요?</strong><p>AI CoE에 새로운 콘텐츠를 제안해 주세요.</p><button>아이디어 제안</button></div>
+        <nav><p className="nav-label">EXPLORE</p>{categories.map((item, index) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}><span>{["⌂", "✦", "↗", "⚡"][index]}</span>{item}{item === "업무 자동화" && <em>1</em>}</button>)}</nav>
+        <div className="sidebar-card"><span>✦</span><strong>AI 활용 아이디어가 있나요?</strong><p>AI CoE에 새로운 콘텐츠를 제안해 주세요.</p><a href={ideaMailto}>아이디어 제안</a></div>
         <footer>HANWHA ESSENTIAL<br />AI Center of Excellence</footer>
       </aside>
 
@@ -145,7 +193,7 @@ export function AICoeHub() {
 
         <section className="section-title"><div><span className="live-dot" />FEATURED GUIDE</div><p>{category === "전체 콘텐츠" ? "AI CoE가 엄선한 최신 가이드" : category}</p></section>
 
-        {!matchesSearch ? <div className="empty-state"><span>⌕</span><h2>검색 결과가 없습니다</h2><p>다른 키워드로 다시 찾아보세요.</p></div> : <article className={`article ${admin ? "admin-article" : ""}`}>
+        {!categoryHasContent || !matchesSearch ? <div className="empty-state"><span>⌕</span><h2>{categoryHasContent ? "검색 결과가 없습니다" : `${category} 콘텐츠를 준비하고 있습니다`}</h2><p>{categoryHasContent ? "다른 키워드로 다시 찾아보세요." : "새로운 콘텐츠가 등록되면 이곳에서 확인할 수 있습니다."}</p></div> : <article className={`article ${admin ? "admin-article" : ""}`}>
           <div className="article-cover"><div className="cover-grid" /><span className="cover-badge">CLOUDFLARE × EXCEL</span><div className="cloud-orbit"><span>☁</span></div><div className="cover-copy"><small>HANDS-ON LAB · 01</small><strong>DATA TO<br /><em>LIVE WEB</em></strong><p>엑셀 보고서를 실시간 대시보드로</p></div></div>
           <div className="article-body">
             <div className="article-meta"><span>{post.category}</span><span>{post.publishedAt}</span><span>{post.readTime} 읽기</span></div>
@@ -158,9 +206,15 @@ export function AICoeHub() {
             </div>
 
             {admin && <div className="slash-editor">
-              <div className="slash-line"><span>＋</span><input value={slash} onChange={(e) => setSlash(e.target.value)} placeholder="'/'를 입력해 블록 추가" aria-label="슬래시 명령 입력" /></div>
-              {slash.startsWith("/") && <div className="slash-menu"><p>기본 블록</p>{slashOptions.map((option) => <button key={option.type} onClick={() => option.type === "image" ? imageInput.current?.click() : addBlock(option.type)}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
-              <input ref={imageInput} className="visually-hidden" type="file" accept="image/*" onChange={uploadImage} />
+              <div className="slash-line"><span>＋</span><textarea value={draftText} onChange={(e) => setDraftText(e.target.value)} onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); addParagraph(); }
+              }} rows={4} placeholder="새 내용을 입력하세요. '/'를 누르면 블록과 첨부파일을 추가할 수 있습니다." aria-label="새 내용 입력" /></div>
+              <div className="composer-actions"><span>Enter 줄바꿈 · ⌘/Ctrl + Enter 문단 추가</span><button onClick={addParagraph} disabled={!draftText.trim()}>내용 추가</button></div>
+              {showSlashMenu && <div className="slash-menu"><p>기본 블록</p>{slashOptions.map((option) => <button key={option.type} onClick={() => option.type === "image" ? imageInput.current?.click() : option.type === "attachment" ? attachmentInput.current?.click() : addBlock(option.type)}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
+              {uploading && <p className="upload-status">파일을 업로드하고 있습니다…</p>}
+              {uploadError && <p className="upload-error">{uploadError}</p>}
+              <input ref={imageInput} className="visually-hidden" type="file" accept="image/*" onChange={(e) => uploadFile(e, "image")} />
+              <input ref={attachmentInput} className="visually-hidden" type="file" accept=".pdf,.ppt,.pptx,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.zip,.doc,.docx,.txt,.html" onChange={(e) => uploadFile(e, "attachment")} />
             </div>}
 
             <div className="article-end"><span>HANWHA</span><p>AI를 가장 잘 쓰는 조직을 함께 만듭니다.</p></div>
@@ -170,7 +224,6 @@ export function AICoeHub() {
 
       <aside className="toc">
         <div className="toc-inner"><p>ON THIS PAGE</p>{headings.map((heading, index) => <a key={heading.id} href={`#${heading.id}`}><span>{String(index + 1).padStart(2, "0")}</span>{"text" in heading ? heading.text.replace(/^[^가-힣A-Za-z\[]+/, "") : ""}</a>)}<div className="toc-progress"><span style={{ height: `${Math.min(100, 28 + post.blocks.length)}%` }} /></div></div>
-        <div className="help-card"><span>?</span><strong>실습 중 막혔나요?</strong><p>AI CoE 오피스아워에서 함께 해결해 드립니다.</p><button>도움 요청하기 ↗</button></div>
       </aside>
     </div>
     {loading && <div className="loading-toast">콘텐츠를 불러오는 중…</div>}

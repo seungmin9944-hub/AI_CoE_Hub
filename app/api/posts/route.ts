@@ -30,6 +30,10 @@ async function ensureDatabase() {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(seedPost.id, seedPost.slug, seedPost.title, seedPost.excerpt, seedPost.category, seedPost.author, seedPost.publishedAt, seedPost.readTime, JSON.stringify(seedPost.tags), JSON.stringify(seedPost.blocks), new Date().toISOString())
       .run();
+  } else {
+    await db.prepare("UPDATE posts SET category = ?, updated_at = ? WHERE id = ?")
+      .bind(seedPost.category, new Date().toISOString(), seedPost.id)
+      .run();
   }
   return db;
 }

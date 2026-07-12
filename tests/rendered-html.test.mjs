@@ -13,9 +13,13 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
 
   await access(new URL("../dist/server/index.js", import.meta.url));
   assert.match(client, /관리자 모드/);
-  assert.match(client, /슬래시 명령 입력/);
+  assert.match(client, /첨부파일을 추가할 수 있습니다/);
+  assert.match(client, /PDF, PPT, PNG, XLSX/);
+  assert.match(client, /ideaMailto/);
+  assert.doesNotMatch(client, /실습 가이드/);
   assert.match(client, /navigator\.clipboard\.writeText/);
   assert.match(content, /엑셀 보고서의 종말 선언/);
+  assert.match(content, /category: "업무 자동화"/);
   assert.match(postsApi, /CREATE TABLE IF NOT EXISTS posts/);
   assert.match(filesApi, /bucket\.put/);
   assert.match(hosting, /"d1": "DB"/);

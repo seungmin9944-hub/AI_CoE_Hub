@@ -47,7 +47,7 @@ export const seedPost: Post = {
   slug: "excel-cloudflare-dashboard",
   title: "엑셀 보고서의 종말 선언! 100% 무료, 실시간 웹 대시보드 만들기 (w CloudFlare)",
   excerpt: "엑셀 데이터를 인터랙티브 대시보드로 만들고 Cloudflare R2와 Workers에 배포하는 전 과정을 따라 해봅니다.",
-  category: "실습 가이드",
+  category: "업무 자동화",
   author: "AI CoE",
   publishedAt: "2026. 7. 12.",
   readTime: "18분",
