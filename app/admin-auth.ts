@@ -84,7 +84,7 @@ export async function getAdminUser() {
   if (!teamDomain || !audience || !allowedEmails.size) return null;
 
   const requestHeaders = await headers();
-  const token = requestHeaders.get("cf-access-jwt-assertion");
+  const token = requestHeaders.get("cf-access-jwt-assertion") ?? requestHeaders.get("x-ai-coe-access-token");
   if (!token) return null;
   const payload = await verifyAccessToken(token, teamDomain, audience);
   const email = payload?.email?.trim().toLowerCase();

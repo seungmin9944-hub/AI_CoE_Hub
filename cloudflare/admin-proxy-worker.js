@@ -7,6 +7,8 @@ export default {
 
     const target = new URL(`${incoming.pathname}${incoming.search}`, SITE_ORIGIN);
     const headers = new Headers(request.headers);
+    const accessToken = request.headers.get("cf-access-jwt-assertion");
+    if (accessToken) headers.set("x-ai-coe-access-token", accessToken);
     headers.set("x-forwarded-host", incoming.host);
     headers.set("x-forwarded-proto", "https");
 
