@@ -205,13 +205,13 @@ td input,th input { width:100%; border:0; outline:0; background:transparent; }
 .toc-links { position:relative; padding-left:15px; }
 .toc-row { position:relative; min-height:34px; display:flex; align-items:flex-start; gap:6px; padding:4px 0; }
 .toc-row a { flex:1; display:flex; gap:9px; color:#8a8f98; text-decoration:none; font-size:11.5px; line-height:1.45; }.toc-row a:hover { color:var(--orange); }.toc-row a>span:first-child { flex:0 0 18px; color:#c1c4c9; font-size:9.2px; padding-top:2px; }
-.toc-row .toc-label { min-width:0; flex:1; color:inherit; font-size:inherit; padding:0; }
+.toc-row .toc-label { min-width:0; flex:1; color:inherit; font-size:inherit; padding:0; white-space:pre-wrap; }
 .toc-row.active a,.toc-row.active a span { color:var(--orange); font-weight:700; }
 .admin-toc-row { gap:9px; }
 .admin-toc-row .toc-number-link { flex:0 0 18px; gap:0; }
-.admin-toc-row input { min-width:0; flex:1; width:auto; border:1px solid transparent; border-radius:5px; background:transparent; padding:0; outline:0; color:#8a8f98; font-size:11.5px; line-height:1.45; }
-.admin-toc-row input:hover,.admin-toc-row input:focus { border-color:#f0b28c; background:#fffaf7; padding:3px 5px; margin:-3px -5px; }
-.toc-row.active input { color:var(--orange); font-weight:700; }
+.admin-toc-row textarea { min-width:0; flex:1; width:auto; field-sizing:content; resize:none; overflow:hidden; border:0; border-radius:5px; background:transparent; padding:0; outline:0; color:#8a8f98; font-size:11.5px; line-height:1.45; }
+.admin-toc-row textarea:hover,.admin-toc-row textarea:focus { background:#fffaf7; box-shadow:0 0 0 1px #f0b28c; }
+.toc-row.active textarea { color:var(--orange); font-weight:700; }
 .toc-progress { position:absolute; left:0; top:0; bottom:0; width:1px; background:#dddfe3; }.toc-progress span { position:absolute; left:0; display:block; width:3px; min-height:14px; background:var(--orange); transition:top .24s ease,height .24s ease; }
 .toc-add { display:flex; gap:5px; margin:12px 0 0 15px; }.toc-add input { min-width:0; flex:1; border:1px dashed #dfe2e6; border-radius:6px; padding:7px; outline:0; font-size:10.35px; }.toc-add button { width:29px; border:0; border-radius:6px; background:#fff0e6; color:#d85b12; font-weight:800; }
 .empty-state { background:white; border:1px solid #e2e4e7; border-radius:15px; text-align:center; padding:80px 20px; }.empty-state span { font-size:34.5px; color:#b5bac2; }.empty-state h2 { font-size:20.7px; }.empty-state p { color:#8c9199; font-size:13.8px; }
