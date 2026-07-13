@@ -5,6 +5,7 @@ type RuntimeEnv = {
   CF_ACCESS_TEAM_DOMAIN?: string;
   CF_ACCESS_AUD?: string;
   ADMIN_EMAILS?: string;
+  ADMIN_PROXY_SHARED_SECRET?: string;
 };
 
 type AccessPayload = {
@@ -81,9 +82,16 @@ export async function getAdminUser() {
   const teamDomain = runtime.CF_ACCESS_TEAM_DOMAIN?.trim();
   const audience = runtime.CF_ACCESS_AUD?.trim();
   const allowedEmails = new Set((runtime.ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
-  if (!teamDomain || !audience || !allowedEmails.size) return null;
+  if (!allowedEmails.size) return null;
 
   const requestHeaders = await headers();
+  const proxySecret = requestHeaders.get("x-ai-coe-proxy-secret");
+  const proxyEmail = requestHeaders.get("x-ai-coe-access-email")?.trim().toLowerCase();
+  if (runtime.ADMIN_PROXY_SHARED_SECRET && proxySecret === runtime.ADMIN_PROXY_SHARED_SECRET && proxyEmail && allowedEmails.has(proxyEmail)) {
+    return { email: proxyEmail };
+  }
+
+  if (!teamDomain || !audience) return null;
   const token = requestHeaders.get("cf-access-jwt-assertion") ?? requestHeaders.get("x-ai-coe-access-token");
   if (!token) return null;
   const payload = await verifyAccessToken(token, teamDomain, audience);

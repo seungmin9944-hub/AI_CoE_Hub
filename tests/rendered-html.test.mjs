@@ -43,10 +43,13 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(adminAuth, /cf-access-jwt-assertion/);
   assert.match(adminAuth, /RSASSA-PKCS1-v1_5/);
   assert.match(adminAuth, /ADMIN_EMAILS/);
+  assert.match(adminAuth, /ADMIN_PROXY_SHARED_SECRET/);
+  assert.match(adminAuth, /x-ai-coe-access-email/);
   assert.match(adminPage, /한화이센셜 AI CoE 관리자 로그인/);
   assert.match(adminPage, /redirect\(adminPortalUrl\)/);
   assert.match(adminProxy, /SITE_ORIGIN/);
   assert.match(adminProxy, /x-ai-coe-access-token/);
+  assert.match(adminProxy, /x-ai-coe-proxy-secret/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "FILES"/);
 });
