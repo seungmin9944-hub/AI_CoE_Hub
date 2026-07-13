@@ -1,14 +1,5 @@
-import { getChatGPTUser } from "./chatgpt-auth";
-
-const ADMIN_EMAILS = new Set([
-  "seungmin.kim@hanwha.com",
-  "ghcho08@hanwha.com",
-  "taewonkim@hanwha.com",
-  "semin1000@hanwha.com",
-]);
-
+// Cloudflare Access 연결 전까지 모든 관리자 쓰기 요청을 잠급니다.
+// 추후 Access가 전달하는 검증된 사용자 헤더로 이 함수를 교체합니다.
 export async function isAdminUser() {
-  const user = await getChatGPTUser();
-  if (!user) return false;
-  return ADMIN_EMAILS.has(user.email.toLowerCase());
+  return false;
 }

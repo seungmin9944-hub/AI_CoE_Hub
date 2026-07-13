@@ -18,6 +18,7 @@ type Pagination = {
 };
 
 const emptyPagination: Pagination = { page: 1, pageSize: 1, totalItems: 0, totalPages: 0, hasPrevious: false, hasNext: false };
+type SlashCommandType = "code" | "image" | "callout" | "table" | "attachment";
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -29,13 +30,14 @@ function CopyButton({ value }: { value: string }) {
   return <button className="copy-button" onClick={copy} aria-label="코드 복사">{copied ? "복사 완료" : "복사"}</button>;
 }
 
-function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplaceFile, onDragStart, onDragEnter, onDrop, onDragEnd, isDragging, isDropTarget }: {
+function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplaceFile, onSlashCommand, onDragStart, onDragEnter, onDrop, onDragEnd, isDragging, isDropTarget }: {
   block: ContentBlock;
   editing: boolean;
   onChange: (next: ContentBlock) => void;
   onDelete: () => void;
   onInsertAfter: () => void;
   onReplaceFile: (file: File) => void;
+  onSlashCommand: (type: SlashCommandType) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
   onDragEnter: () => void;
   onDrop: () => void;
@@ -43,6 +45,7 @@ function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplac
   isDragging: boolean;
   isDropTarget: boolean;
 }) {
+  const inlineSlashOpen = editing && (block.type === "heading" || block.type === "paragraph" || block.type === "callout") && /(^|\s)\/[^\s/]*$/.test(block.text);
   const editor = (className: string) => {
     if (!("text" in block)) return null;
     return editing ? <textarea className={`block-input ${className}`} value={block.text} rows={Math.max(1, block.text.split("\n").length)}
@@ -82,6 +85,7 @@ function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplac
     onDragOver={(event) => { if (editing) event.preventDefault(); }} onDragEnter={() => editing && onDragEnter()} onDrop={(event) => { if (editing) { event.preventDefault(); onDrop(); } }}>
     {editing && <div className="block-controls"><button className="drag-handle" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} aria-label="블록 순서 이동">⋮⋮</button><button className="delete-block" onClick={onDelete} aria-label="블록 삭제">×</button></div>}
     {content}
+    {inlineSlashOpen && <div className="inline-slash-menu"><p>블록 추가</p>{slashOptions.map((option) => <button key={option.type} onClick={() => onSlashCommand(option.type)}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
     {editing && <button className="insert-after" onClick={onInsertAfter}>＋ 이 아래에 텍스트 추가</button>}
   </div>;
 }
@@ -94,13 +98,17 @@ const slashOptions = [
   { type: "attachment", label: "첨부파일", hint: "PDF, PPT, PNG, XLSX 등 업로드", symbol: "↑" },
 ] as const;
 
-export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAuthorized: boolean; signedIn: boolean; signInPath: string }) {
+export function AICoeHub() {
   const [post, setPost] = useState<Post | null>(seedPost);
   const [pagination, setPagination] = useState<Pagination>(emptyPagination);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [admin, setAdmin] = useState(false);
-  const [authorized, setAuthorized] = useState(adminAuthorized);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminCode, setAdminCode] = useState("");
+  const [loginNotice, setLoginNotice] = useState("");
+  const [pendingInsertAfterId, setPendingInsertAfterId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -119,16 +127,6 @@ export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAutho
   const attachmentInput = useRef<HTMLInputElement>(null);
   const tocLinksRef = useRef<HTMLDivElement>(null);
   const tocItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
-  useEffect(() => {
-    if (!authorized) return;
-    const url = new URL(window.location.href);
-    if (url.searchParams.get("admin") === "1") {
-      setAdmin(true);
-      url.searchParams.delete("admin");
-      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-    }
-  }, [authorized]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -217,11 +215,39 @@ export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAutho
     return additions;
   }
 
-  function addBlock(type: "code" | "callout" | "table") {
+  function createStructuredBlock(type: "code" | "callout" | "table") {
     const id = `block-${Date.now()}`;
-    const block: ContentBlock = type === "table" ? { id, type, rows: [["항목", "내용", "비고"], ["", "", ""], ["", "", ""]] }
-      : type === "code" ? { id, type, language: "prompt", text: "여기에 코드 또는 프롬프트를 입력하세요." }
-        : { id, type, tone: "info", text: "강조할 내용을 입력하세요." };
+    return type === "table" ? { id, type, rows: [["항목", "내용", "비고"], ["", "", ""], ["", "", ""]] } as ContentBlock
+      : type === "code" ? { id, type, language: "prompt", text: "여기에 코드 또는 프롬프트를 입력하세요." } as ContentBlock
+        : { id, type, tone: "info", text: "강조할 내용을 입력하세요." } as ContentBlock;
+  }
+
+  function insertBlockAfterId(targetId: string, newBlock: ContentBlock, cleanSlash = false) {
+    setPost((current) => {
+      if (!current) return current;
+      const blocks = current.blocks.map((block) => cleanSlash && block.id === targetId && "text" in block
+        ? { ...block, text: block.text.replace(/(^|\s)\/[^\s/]*$/, "$1").trimEnd() } as ContentBlock : block);
+      const index = blocks.findIndex((block) => block.id === targetId);
+      blocks.splice(index + 1, 0, newBlock);
+      return { ...current, blocks };
+    });
+    setSaved(false);
+  }
+
+  function handleInlineSlash(targetId: string, type: SlashCommandType) {
+    if (type === "image" || type === "attachment") {
+      setPost((current) => current ? { ...current, blocks: current.blocks.map((block) => block.id === targetId && "text" in block
+        ? { ...block, text: block.text.replace(/(^|\s)\/[^\s/]*$/, "$1").trimEnd() } as ContentBlock : block) } : current);
+      setPendingInsertAfterId(targetId);
+      if (type === "image") imageInput.current?.click();
+      else attachmentInput.current?.click();
+      return;
+    }
+    insertBlockAfterId(targetId, createStructuredBlock(type), true);
+  }
+
+  function addBlock(type: "code" | "callout" | "table") {
+    const block = createStructuredBlock(type);
     setPost((current) => current ? { ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] } : current);
     setDraftText("");
     setSaved(false);
@@ -257,9 +283,9 @@ export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAutho
     form.append("file", file);
     const response = await fetch("/api/files", { method: "POST", body: form });
     if (response.status === 401) {
-      setAuthorized(false);
       setAdmin(false);
-      setUploadError("관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.");
+      setShowAdminLogin(true);
+      setUploadError("Cloudflare 관리자 인증 연결 후 사용할 수 있습니다.");
       setUploading(false);
       return null;
     }
@@ -281,8 +307,12 @@ export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAutho
     if (result) {
       const block: ContentBlock = kind === "image" ? { id: `block-${Date.now()}`, type: "image", url: result.url, caption: file.name }
         : { id: `block-${Date.now()}`, type: "attachment", url: result.url, name: file.name, size: formatFileSize(result.size) };
-      setPost((current) => current ? { ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] } : current);
-      setDraftText("");
+      if (pendingInsertAfterId) insertBlockAfterId(pendingInsertAfterId, block);
+      else {
+        setPost((current) => current ? { ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] } : current);
+        setDraftText("");
+      }
+      setPendingInsertAfterId(null);
       setSaved(false);
     }
     event.target.value = "";
@@ -300,7 +330,7 @@ export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAutho
     setSaving(true);
     const response = await fetch("/api/posts", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(post) });
     setSaving(false);
-    if (response.status === 401) { setAuthorized(false); setAdmin(false); return; }
+    if (response.status === 401) { setAdmin(false); setShowAdminLogin(true); return; }
     if (response.ok) { setSaved(true); window.setTimeout(() => setSaved(false), 2200); }
   }
 
@@ -308,7 +338,7 @@ export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAutho
     setCreating(true);
     const targetCategory = category === "전체 콘텐츠" ? "업무 자동화" : category;
     const response = await fetch("/api/posts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ category: targetCategory }) });
-    if (response.status === 401) { setAuthorized(false); setAdmin(false); setCreating(false); return; }
+    if (response.status === 401) { setAdmin(false); setShowAdminLogin(true); setCreating(false); return; }
     const created = response.ok ? await response.json() as Post : null;
     setCreating(false);
     if (created) { setCategory(targetCategory); setPage(1); setPost(created); setRefreshKey((value) => value + 1); }
@@ -321,7 +351,7 @@ export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAutho
       <div className="header-actions">
         {admin && <button className="create-post-button" onClick={createPost} disabled={creating}>{creating ? "생성 중…" : "＋ 새 콘텐츠"}</button>}
         {admin && post && <button className="save-button" onClick={savePost} disabled={saving}>{saving ? "저장 중…" : saved ? "저장 완료 ✓" : "변경사항 저장"}</button>}
-        <button className={`admin-toggle ${admin ? "active" : ""}`} disabled={signedIn && !authorized} onClick={() => authorized ? setAdmin(!admin) : window.location.assign(signInPath)}><span>{admin ? "◆" : "◇"}</span>{admin ? "관리자 편집 중" : authorized ? "관리자 모드" : signedIn ? "관리자 권한 없음" : "관리자 로그인"}</button>
+        <button className="admin-toggle" onClick={() => setShowAdminLogin(true)}><span>◇</span>관리자 모드</button>
       </div>
     </header>
 
@@ -353,6 +383,7 @@ export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAutho
               <div className="blocks">
                 {post.blocks.map((block) => <BlockView key={block.id} block={block} editing={admin} onChange={(next) => updateBlock(block.id, next)}
                   onDelete={() => setPost((current) => current ? { ...current, blocks: current.blocks.filter((item) => item.id !== block.id) } : current)} onInsertAfter={() => insertParagraphAfter(block.id)} onReplaceFile={(file) => replaceBlockFile(block, file)}
+                  onSlashCommand={(type) => handleInlineSlash(block.id, type)}
                   onDragStart={(event) => { setDraggedId(block.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", block.id); }} onDragEnter={() => draggedId && setDropTargetId(block.id)}
                   onDrop={() => { if (draggedId) moveBlock(draggedId, block.id); setDraggedId(null); setDropTargetId(null); }} onDragEnd={() => { setDraggedId(null); setDropTargetId(null); }} isDragging={draggedId === block.id} isDropTarget={dropTargetId === block.id && draggedId !== block.id} />)}
               </div>
@@ -360,7 +391,7 @@ export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAutho
               {admin && <div className="slash-editor">
                 <div className="slash-line"><span>＋</span><textarea value={draftText} onChange={(event) => setDraftText(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); addParagraph(); } }} rows={4} placeholder="새 내용을 입력하세요. '/'를 누르면 블록과 첨부파일을 추가할 수 있습니다." aria-label="새 내용 입력" /></div>
                 <div className="composer-actions"><span>Enter 줄바꿈 · ⌘/Ctrl + Enter 문단 추가</span><button onClick={addParagraph} disabled={!draftText.trim()}>내용 추가</button></div>
-                {showSlashMenu && <div className="slash-menu"><p>기본 블록</p>{slashOptions.map((option) => <button key={option.type} onClick={() => option.type === "image" ? imageInput.current?.click() : option.type === "attachment" ? attachmentInput.current?.click() : addBlock(option.type)}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
+                {showSlashMenu && <div className="slash-menu"><p>기본 블록</p>{slashOptions.map((option) => <button key={option.type} onClick={() => { setPendingInsertAfterId(null); if (option.type === "image") imageInput.current?.click(); else if (option.type === "attachment") attachmentInput.current?.click(); else addBlock(option.type); }}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
                 {uploading && <p className="upload-status">파일을 업로드하고 있습니다…</p>}{uploadError && <p className="upload-error">{uploadError}</p>}
                 <input ref={imageInput} className="visually-hidden" type="file" accept="image/*" onChange={(event) => uploadFile(event, "image")} />
                 <input ref={attachmentInput} className="visually-hidden" type="file" accept={attachmentAccept} onChange={(event) => uploadFile(event, "attachment")} />
@@ -386,6 +417,21 @@ export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAutho
         </div>}
       </aside>
     </div>
+    {showAdminLogin && <div className="admin-login-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAdminLogin(false); }}>
+      <section className="admin-login-card" role="dialog" aria-modal="true" aria-labelledby="admin-login-title">
+        <button className="login-close" onClick={() => setShowAdminLogin(false)} aria-label="로그인 화면 닫기">×</button>
+        <div className="cloudflare-mark"><span>☁</span>Cloudflare Access</div>
+        <h2 id="admin-login-title">관리자 로그인</h2>
+        <p>AI CoE 콘텐츠를 편집하려면 회사 계정으로 인증해 주세요.</p>
+        <form onSubmit={(event) => { event.preventDefault(); setLoginNotice("Cloudflare Access 연결 후 관리자 인증이 활성화됩니다."); }}>
+          <label>회사 이메일<input type="email" value={adminEmail} onChange={(event) => setAdminEmail(event.target.value)} placeholder="name@hanwha.com" required /></label>
+          <label>인증 코드<input value={adminCode} onChange={(event) => setAdminCode(event.target.value)} placeholder="6자리 인증 코드" inputMode="numeric" maxLength={6} /></label>
+          <button type="submit">Cloudflare로 로그인</button>
+        </form>
+        <div className="access-coming"><span>연결 준비 중</span>Cloudflare Access 연동 전에는 관리자 편집이 잠겨 있습니다.</div>
+        {loginNotice && <p className="login-notice">{loginNotice}</p>}
+      </section>
+    </div>}
     {loading && <div className="loading-toast">콘텐츠를 불러오는 중…</div>}
   </div>;
 }

@@ -22,6 +22,8 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(client, /drag-handle/);
   assert.match(client, /목차와 본문 제목 추가/);
   assert.match(client, /activeHeadingId/);
+  assert.match(client, /inline-slash-menu/);
+  assert.match(client, /Cloudflare Access 연결 후 관리자 인증이 활성화됩니다/);
   assert.doesNotMatch(client, /실습 가이드/);
   assert.match(client, /navigator\.clipboard\.writeText/);
   assert.match(content, /엑셀 보고서의 종말 선언/);
@@ -32,7 +34,7 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(postsApi, /관리자 권한이 필요합니다/);
   assert.match(filesApi, /bucket\.put/);
   assert.match(uploadApi, /isAdminUser/);
-  assert.match(adminAuth, /seungmin\.kim@hanwha\.com/);
+  assert.match(adminAuth, /Cloudflare Access 연결 전까지/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "FILES"/);
 });
