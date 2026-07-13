@@ -126,16 +126,12 @@ function clipboardImage(event: ClipboardEvent<HTMLTextAreaElement>) {
   return new File([image], `clipboard-${Date.now()}.${extension}`, { type: image.type });
 }
 
-export function AICoeHub() {
+export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { initialAdmin?: boolean; adminPortalUrl?: string }) {
   const [post, setPost] = useState<Post | null>(seedPost);
   const [pagination, setPagination] = useState<Pagination>(emptyPagination);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [admin, setAdmin] = useState(false);
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [adminEmail, setAdminEmail] = useState("");
-  const [adminCode, setAdminCode] = useState("");
-  const [loginNotice, setLoginNotice] = useState("");
+  const [admin] = useState(initialAdmin);
   const [pendingInsertAfterId, setPendingInsertAfterId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -311,9 +307,7 @@ export function AICoeHub() {
     form.append("file", file);
     const response = await fetch("/api/files", { method: "POST", body: form });
     if (response.status === 401) {
-      setAdmin(false);
-      setShowAdminLogin(true);
-      setUploadError("Cloudflare 관리자 인증 연결 후 사용할 수 있습니다.");
+      setUploadError("관리자 인증이 만료되었거나 허용되지 않은 계정입니다. 관리자 주소에서 다시 로그인해 주세요.");
       setUploading(false);
       return null;
     }
@@ -370,7 +364,7 @@ export function AICoeHub() {
     setSaving(true);
     const response = await fetch("/api/posts", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(post) });
     setSaving(false);
-    if (response.status === 401) { setAdmin(false); setShowAdminLogin(true); return; }
+    if (response.status === 401) { window.location.reload(); return; }
     if (response.ok) { setSaved(true); window.setTimeout(() => setSaved(false), 2200); }
   }
 
@@ -378,7 +372,7 @@ export function AICoeHub() {
     setCreating(true);
     const targetCategory = category === "전체 콘텐츠" ? "업무 자동화" : category;
     const response = await fetch("/api/posts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ category: targetCategory }) });
-    if (response.status === 401) { setAdmin(false); setShowAdminLogin(true); setCreating(false); return; }
+    if (response.status === 401) { setCreating(false); window.location.reload(); return; }
     const created = response.ok ? await response.json() as Post : null;
     setCreating(false);
     if (created) { setCategory(targetCategory); setPage(1); setPost(created); setRefreshKey((value) => value + 1); }
@@ -391,7 +385,7 @@ export function AICoeHub() {
       <div className="header-actions">
         {admin && <button className="create-post-button" onClick={createPost} disabled={creating}>{creating ? "생성 중…" : "＋ 새 콘텐츠"}</button>}
         {admin && post && <button className="save-button" onClick={savePost} disabled={saving}>{saving ? "저장 중…" : saved ? "저장 완료 ✓" : "변경사항 저장"}</button>}
-        <button className="admin-toggle" onClick={() => setShowAdminLogin(true)}><span>◇</span>관리자 모드</button>
+        <a className={`admin-toggle ${admin ? "active" : ""}`} href={adminPortalUrl}><span>◇</span>{admin ? "관리자 편집 중" : "관리자 모드"}</a>
       </div>
     </header>
 
@@ -457,21 +451,6 @@ export function AICoeHub() {
         </div>}
       </aside>
     </div>
-    {showAdminLogin && <div className="admin-login-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAdminLogin(false); }}>
-      <section className="admin-login-card" role="dialog" aria-modal="true" aria-labelledby="admin-login-title">
-        <button className="login-close" onClick={() => setShowAdminLogin(false)} aria-label="로그인 화면 닫기">×</button>
-        <div className="cloudflare-mark"><span>☁</span>Cloudflare Access</div>
-        <h2 id="admin-login-title">관리자 로그인</h2>
-        <p>AI CoE 콘텐츠를 편집하려면 회사 계정으로 인증해 주세요.</p>
-        <form onSubmit={(event) => { event.preventDefault(); setLoginNotice("Cloudflare Access 연결 후 관리자 인증이 활성화됩니다."); }}>
-          <label>회사 이메일<input type="email" value={adminEmail} onChange={(event) => setAdminEmail(event.target.value)} placeholder="name@hanwha.com" required /></label>
-          <label>인증 코드<input value={adminCode} onChange={(event) => setAdminCode(event.target.value)} placeholder="6자리 인증 코드" inputMode="numeric" maxLength={6} /></label>
-          <button type="submit">Cloudflare로 로그인</button>
-        </form>
-        <div className="access-coming"><span>연결 준비 중</span>Cloudflare Access 연동 전에는 관리자 편집이 잠겨 있습니다.</div>
-        {loginNotice && <p className="login-notice">{loginNotice}</p>}
-      </section>
-    </div>}
     {loading && <div className="loading-toast">콘텐츠를 불러오는 중…</div>}
   </div>;
 }
