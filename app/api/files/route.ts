@@ -1,9 +1,11 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import { isAdminUser } from "../../admin-auth";
 
 type RuntimeEnv = { FILES: R2Bucket };
 
 export async function POST(request: NextRequest) {
+  if (!(await isAdminUser())) return NextResponse.json({ error: "관리자 권한이 필요합니다." }, { status: 401 });
   const form = await request.formData();
   const file = form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: "파일이 없습니다." }, { status: 400 });

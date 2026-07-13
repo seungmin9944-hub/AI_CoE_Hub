@@ -3,11 +3,13 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the AI CoE knowledge hub and backend routes", async () => {
-  const [client, content, postsApi, filesApi, hosting] = await Promise.all([
+  const [client, content, postsApi, filesApi, uploadApi, adminAuth, hosting] = await Promise.all([
     readFile(new URL("../app/AICoeHub.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/content.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/posts/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/files/[...key]/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/files/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin-auth.ts", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
   ]);
 
@@ -27,7 +29,10 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(postsApi, /CREATE TABLE IF NOT EXISTS posts/);
   assert.match(postsApi, /totalPages/);
   assert.match(postsApi, /export async function POST/);
+  assert.match(postsApi, /관리자 권한이 필요합니다/);
   assert.match(filesApi, /bucket\.put/);
+  assert.match(uploadApi, /isAdminUser/);
+  assert.match(adminAuth, /seungmin\.kim@hanwha\.com/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "FILES"/);
 });

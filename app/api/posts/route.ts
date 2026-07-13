@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { seedPost, type Post } from "../../content";
+import { isAdminUser } from "../../admin-auth";
 
 type RuntimeEnv = { DB: D1Database };
 
@@ -84,6 +85,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!(await isAdminUser())) return NextResponse.json({ error: "관리자 권한이 필요합니다." }, { status: 401 });
   const db = await ensureDatabase();
   const body = await request.json().catch(() => ({})) as { category?: string; title?: string };
   const id = crypto.randomUUID();
@@ -114,6 +116,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  if (!(await isAdminUser())) return NextResponse.json({ error: "관리자 권한이 필요합니다." }, { status: 401 });
   const db = await ensureDatabase();
   const post = (await request.json()) as Post;
   if (!post?.id || !post?.slug || !post?.title || !Array.isArray(post.blocks)) {

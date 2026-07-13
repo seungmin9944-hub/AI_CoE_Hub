@@ -94,12 +94,13 @@ const slashOptions = [
   { type: "attachment", label: "첨부파일", hint: "PDF, PPT, PNG, XLSX 등 업로드", symbol: "↑" },
 ] as const;
 
-export function AICoeHub() {
+export function AICoeHub({ adminAuthorized, signedIn, signInPath }: { adminAuthorized: boolean; signedIn: boolean; signInPath: string }) {
   const [post, setPost] = useState<Post | null>(seedPost);
   const [pagination, setPagination] = useState<Pagination>(emptyPagination);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [admin, setAdmin] = useState(false);
+  const [authorized, setAuthorized] = useState(adminAuthorized);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -118,6 +119,16 @@ export function AICoeHub() {
   const attachmentInput = useRef<HTMLInputElement>(null);
   const tocLinksRef = useRef<HTMLDivElement>(null);
   const tocItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (!authorized) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("admin") === "1") {
+      setAdmin(true);
+      url.searchParams.delete("admin");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+  }, [authorized]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -245,6 +256,13 @@ export function AICoeHub() {
     const form = new FormData();
     form.append("file", file);
     const response = await fetch("/api/files", { method: "POST", body: form });
+    if (response.status === 401) {
+      setAuthorized(false);
+      setAdmin(false);
+      setUploadError("관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.");
+      setUploading(false);
+      return null;
+    }
     if (!response.ok) {
       const result = await response.json().catch(() => ({ error: "파일 업로드에 실패했습니다." }));
       setUploadError(result.error ?? "파일 업로드에 실패했습니다.");
@@ -282,6 +300,7 @@ export function AICoeHub() {
     setSaving(true);
     const response = await fetch("/api/posts", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(post) });
     setSaving(false);
+    if (response.status === 401) { setAuthorized(false); setAdmin(false); return; }
     if (response.ok) { setSaved(true); window.setTimeout(() => setSaved(false), 2200); }
   }
 
@@ -289,6 +308,7 @@ export function AICoeHub() {
     setCreating(true);
     const targetCategory = category === "전체 콘텐츠" ? "업무 자동화" : category;
     const response = await fetch("/api/posts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ category: targetCategory }) });
+    if (response.status === 401) { setAuthorized(false); setAdmin(false); setCreating(false); return; }
     const created = response.ok ? await response.json() as Post : null;
     setCreating(false);
     if (created) { setCategory(targetCategory); setPage(1); setPost(created); setRefreshKey((value) => value + 1); }
@@ -301,7 +321,7 @@ export function AICoeHub() {
       <div className="header-actions">
         {admin && <button className="create-post-button" onClick={createPost} disabled={creating}>{creating ? "생성 중…" : "＋ 새 콘텐츠"}</button>}
         {admin && post && <button className="save-button" onClick={savePost} disabled={saving}>{saving ? "저장 중…" : saved ? "저장 완료 ✓" : "변경사항 저장"}</button>}
-        <button className={`admin-toggle ${admin ? "active" : ""}`} onClick={() => setAdmin(!admin)}><span>{admin ? "◆" : "◇"}</span>{admin ? "관리자 편집 중" : "관리자 모드"}</button>
+        <button className={`admin-toggle ${admin ? "active" : ""}`} disabled={signedIn && !authorized} onClick={() => authorized ? setAdmin(!admin) : window.location.assign(signInPath)}><span>{admin ? "◆" : "◇"}</span>{admin ? "관리자 편집 중" : authorized ? "관리자 모드" : signedIn ? "관리자 권한 없음" : "관리자 로그인"}</button>
       </div>
     </header>
 

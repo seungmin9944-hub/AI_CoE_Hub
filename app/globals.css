@@ -28,6 +28,7 @@ button { cursor:pointer; }
 .admin-toggle,.save-button,.create-post-button { border:1px solid #dfe2e6; background:#fff; border-radius:9px; height:40px; padding:0 15px; font-size:12px; font-weight:700; color:#4e5560; }
 .admin-toggle span { color:var(--orange); margin-right:7px; }
 .admin-toggle.active { color:white; background:var(--ink); border-color:var(--ink); }
+.admin-toggle:disabled { cursor:not-allowed; opacity:.55; }
 .save-button { color:#fff; background:var(--orange); border-color:var(--orange); }
 .create-post-button { color:#d85b12; background:#fff7f1; border-color:#f2c4a8; }
 .save-button:disabled { opacity:.65; }
