@@ -3,7 +3,7 @@ const SITE_ORIGIN = "https://hanwha-essential-ai-coe.reppy1182952347.chatgpt.sit
 export default {
   async fetch(request, env) {
     const incoming = new URL(request.url);
-    if (incoming.pathname === "/") return Response.redirect(new URL("/admin", incoming), 302);
+    if (incoming.pathname === "/") return Response.redirect(new URL("/admin", incoming).toString(), 302);
 
     const target = new URL(`${incoming.pathname}${incoming.search}`, SITE_ORIGIN);
     const headers = new Headers(request.headers);
