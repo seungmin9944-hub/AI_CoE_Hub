@@ -81,7 +81,7 @@ export async function getAdminUser() {
   const runtime = env as unknown as RuntimeEnv;
   const teamDomain = runtime.CF_ACCESS_TEAM_DOMAIN?.trim();
   const audience = runtime.CF_ACCESS_AUD?.trim();
-  const allowedEmails = new Set((runtime.ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
+  const allowedEmails = new Set((runtime.ADMIN_EMAILS ?? "").split(/[;,]/).map((email) => email.trim().toLowerCase()).filter(Boolean));
   if (!allowedEmails.size) return null;
 
   const requestHeaders = await headers();
