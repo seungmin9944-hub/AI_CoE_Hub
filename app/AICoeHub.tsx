@@ -118,7 +118,7 @@ const slashOptions = [
 
 function clipboardImage(event: ClipboardEvent<HTMLTextAreaElement>) {
   const item = Array.from(event.clipboardData.items).find((candidate) => candidate.kind === "file" && candidate.type.startsWith("image/"));
-  const image = item?.getAsFile();
+  const image = item?.getAsFile() ?? Array.from(event.clipboardData.files).find((candidate) => candidate.type.startsWith("image/"));
   if (!image) return null;
   event.preventDefault();
   if (image.name) return image;
@@ -205,7 +205,7 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   }
 
   function insertParagraphAfter(id: string) {
-    const newBlock: ContentBlock = { id: `paragraph-${Date.now()}`, type: "paragraph", text: "새 텍스트를 입력하세요." };
+    const newBlock: ContentBlock = { id: `paragraph-${Date.now()}`, type: "paragraph", text: "" };
     setPost((current) => {
       if (!current) return current;
       const index = current.blocks.findIndex((block) => block.id === id);
@@ -303,23 +303,26 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   async function uploadAsset(file: File) {
     setUploading(true);
     setUploadError("");
-    const form = new FormData();
-    form.append("file", file);
-    const response = await fetch("/api/files", { method: "POST", body: form });
-    if (response.status === 401) {
-      setUploadError("관리자 인증이 만료되었거나 허용되지 않은 계정입니다. 관리자 주소에서 다시 로그인해 주세요.");
-      setUploading(false);
-      return null;
-    }
-    if (!response.ok) {
+    try {
+      const form = new FormData();
+      form.append("file", file, file.name || `clipboard-${Date.now()}.png`);
+      const response = await fetch("/api/files", { method: "POST", body: form });
+      if (response.status === 401) {
+        setUploadError("관리자 인증이 만료되었거나 허용되지 않은 계정입니다. 관리자 주소에서 다시 로그인해 주세요.");
+        return null;
+      }
       const result = await response.json().catch(() => ({ error: "파일 업로드에 실패했습니다." }));
-      setUploadError(result.error ?? "파일 업로드에 실패했습니다.");
-      setUploading(false);
+      if (!response.ok) {
+        setUploadError(result.error ?? "파일 업로드에 실패했습니다.");
+        return null;
+      }
+      return result as { url: string; name: string; size: number };
+    } catch {
+      setUploadError("네트워크 연결로 파일 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요.");
       return null;
+    } finally {
+      setUploading(false);
     }
-    const result = await response.json();
-    setUploading(false);
-    return result as { url: string; name: string; size: number };
   }
 
   async function uploadFile(event: ChangeEvent<HTMLInputElement>, kind: "image" | "attachment") {
@@ -350,7 +353,7 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   async function pasteImage(file: File, afterId?: string) {
     const result = await uploadAsset(file);
     if (!result) return;
-    const image: ContentBlock = { id: `block-${Date.now()}`, type: "image", url: result.url, caption: file.name || "붙여넣은 이미지", width: 100 };
+    const image: ContentBlock = { id: `block-${Date.now()}`, type: "image", url: result.url, caption: "", width: 100 };
     if (afterId) insertBlockAfterId(afterId, image);
     else {
       setPost((current) => current ? { ...current, blocks: [...current.blocks, ...blocksWithDraft(image)] } : current);

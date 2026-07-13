@@ -19,7 +19,10 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(client, /관리자 모드/);
   assert.match(client, /Ctrl\/⌘ \+ V 이미지 붙여넣기/);
   assert.match(client, /clipboardImage/);
+  assert.match(client, /clipboardData\.files/);
   assert.match(client, /image-size-control/);
+  assert.match(client, /type: "paragraph", text: ""/);
+  assert.match(client, /caption: "", width: 100/);
   assert.match(client, /행 추가/);
   assert.match(client, /열 추가/);
   assert.match(client, /PDF, PPT, PNG, XLSX/);
@@ -39,6 +42,8 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(postsApi, /export async function POST/);
   assert.match(postsApi, /관리자 권한이 필요합니다/);
   assert.match(filesApi, /bucket\.put/);
+  assert.match(uploadApi, /file\.arrayBuffer/);
+  assert.match(uploadApi, /R2 upload failed/);
   assert.match(uploadApi, /isAdminUser/);
   assert.match(adminAuth, /cf-access-jwt-assertion/);
   assert.match(adminAuth, /RSASSA-PKCS1-v1_5/);
@@ -50,6 +55,7 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(adminProxy, /SITE_ORIGIN/);
   assert.match(adminProxy, /x-ai-coe-access-token/);
   assert.match(adminProxy, /x-ai-coe-proxy-secret/);
+  assert.match(adminProxy, /request\.arrayBuffer/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "FILES"/);
 });

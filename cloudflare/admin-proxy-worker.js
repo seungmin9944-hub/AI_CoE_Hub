@@ -16,11 +16,12 @@ export default {
     }
     headers.set("x-forwarded-host", incoming.host);
     headers.set("x-forwarded-proto", "https");
+    const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
 
     return fetch(new Request(target, {
       method: request.method,
       headers,
-      body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+      body,
       redirect: "manual",
     }));
   },
