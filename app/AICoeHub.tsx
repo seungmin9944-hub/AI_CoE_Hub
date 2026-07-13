@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, ClipboardEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { seedPost, type ContentBlock, type Post, type TableBlock } from "./content";
 
 const categories = ["전체 콘텐츠", "프롬프트", "AI 트렌드", "업무 자동화"];
@@ -30,13 +30,14 @@ function CopyButton({ value }: { value: string }) {
   return <button className="copy-button" onClick={copy} aria-label="코드 복사">{copied ? "복사 완료" : "복사"}</button>;
 }
 
-function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplaceFile, onSlashCommand, onDragStart, onDragEnter, onDrop, onDragEnd, isDragging, isDropTarget }: {
+function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplaceFile, onPasteImage, onSlashCommand, onDragStart, onDragEnter, onDrop, onDragEnd, isDragging, isDropTarget }: {
   block: ContentBlock;
   editing: boolean;
   onChange: (next: ContentBlock) => void;
   onDelete: () => void;
   onInsertAfter: () => void;
   onReplaceFile: (file: File) => void;
+  onPasteImage: (file: File) => void;
   onSlashCommand: (type: SlashCommandType) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
   onDragEnter: () => void;
@@ -49,7 +50,9 @@ function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplac
   const editor = (className: string) => {
     if (!("text" in block)) return null;
     return editing ? <textarea className={`block-input ${className}`} value={block.text} rows={Math.max(1, block.text.split("\n").length)}
-      onChange={(event) => onChange({ ...block, text: event.target.value })} aria-label="블록 내용 편집" /> : <span>{block.text}</span>;
+      onChange={(event) => onChange({ ...block, text: event.target.value })}
+      onPaste={(event) => { const file = clipboardImage(event); if (file) onPasteImage(file); }}
+      aria-label="블록 내용 편집" /> : <span>{block.text}</span>;
   };
 
   let content: React.ReactNode;
@@ -69,16 +72,31 @@ function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplac
     </div><div className="attachment-actions"><label className="replace-file-button">파일 교체<input type="file" accept={attachmentAccept} onChange={(event) => { const file = event.target.files?.[0]; if (file) onReplaceFile(file); event.target.value = ""; }} /></label><a className="download-label" href={block.url} download>다운로드 확인</a></div></div>
       : <a className="attachment" href={block.url} download><span className="attachment-icon">↓</span><span><strong>{block.name}</strong><small>{block.size} · 첨부파일</small></span><span className="download-label">다운로드</span></a>;
   } else if (block.type === "image") {
-    content = <figure className="article-image"><img src={block.url} alt={block.caption || "게시물 이미지"} />{editing && <label className="replace-file-button image-replace">이미지 교체<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) onReplaceFile(file); event.target.value = ""; }} /></label>}{editing ? <input value={block.caption} onChange={(event) => onChange({ ...block, caption: event.target.value })} placeholder="이미지 설명" /> : <figcaption>{block.caption}</figcaption>}</figure>;
+    const imageWidth = block.width ?? 100;
+    content = <figure className="article-image" style={{ width: `${imageWidth}%` }}><img src={block.url} alt={block.caption || "게시물 이미지"} />{editing && <div className="image-toolbar">
+      <label className="replace-file-button">이미지 교체<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) onReplaceFile(file); event.target.value = ""; }} /></label>
+      <label className="image-size-control"><span>크기 {imageWidth}%</span><input type="range" min="20" max="100" step="5" value={imageWidth} onChange={(event) => onChange({ ...block, width: Number(event.target.value) })} /></label>
+      <div className="image-size-presets" aria-label="이미지 크기 빠른 선택">{[25, 50, 75, 100].map((size) => <button key={size} className={imageWidth === size ? "active" : ""} onClick={() => onChange({ ...block, width: size })}>{size}%</button>)}</div>
+    </div>}{editing ? <input value={block.caption} onChange={(event) => onChange({ ...block, caption: event.target.value })} placeholder="이미지 설명" /> : <figcaption>{block.caption}</figcaption>}</figure>;
   } else {
     const table = block as TableBlock;
-    content = <div className="table-wrap"><table><tbody>{table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => {
-      const Tag = rowIndex === 0 ? "th" : "td";
-      return <Tag key={cellIndex}>{editing ? <input value={cell} onChange={(event) => {
-        const rows = table.rows.map((current, r) => current.map((value, c) => r === rowIndex && c === cellIndex ? event.target.value : value));
-        onChange({ ...table, rows });
-      }} /> : cell}</Tag>;
-    })}</tr>)}</tbody></table></div>;
+    const columnCount = Math.max(1, ...table.rows.map((row) => row.length));
+    const normalizedRows = (table.rows.length ? table.rows : [[""]]).map((row) => Array.from({ length: columnCount }, (_, index) => row[index] ?? ""));
+    const updateRows = (rows: string[][]) => onChange({ ...table, rows });
+    content = <div className={`table-wrap ${editing ? "table-editing" : ""}`}>{editing && <div className="table-toolbar">
+      <span>{normalizedRows.length}행 × {columnCount}열</span>
+      <button onClick={() => updateRows([...normalizedRows, Array(columnCount).fill("")])}>＋ 행 추가</button>
+      <button onClick={() => updateRows(normalizedRows.map((row) => [...row, ""]))}>＋ 열 추가</button>
+    </div>}<table><tbody>
+      {editing && <tr className="column-controls">{Array.from({ length: columnCount }, (_, columnIndex) => <th key={columnIndex}><span>{columnIndex + 1}열</span><button onClick={() => updateRows(normalizedRows.map((row) => row.filter((_, index) => index !== columnIndex)))} disabled={columnCount <= 1} aria-label={`${columnIndex + 1}열 삭제`}>×</button></th>)}<th className="row-control-heading">행</th></tr>}
+      {normalizedRows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => {
+        const Tag = !editing && rowIndex === 0 ? "th" : "td";
+        return <Tag key={cellIndex} className={editing && rowIndex === 0 ? "editable-header-cell" : ""}>{editing ? <input value={cell} onChange={(event) => {
+          const rows = normalizedRows.map((current, r) => current.map((value, c) => r === rowIndex && c === cellIndex ? event.target.value : value));
+          updateRows(rows);
+        }} aria-label={`${rowIndex + 1}행 ${cellIndex + 1}열`} /> : cell}</Tag>;
+      })}{editing && <td className="row-control"><button onClick={() => updateRows(normalizedRows.filter((_, index) => index !== rowIndex))} disabled={normalizedRows.length <= 1} aria-label={`${rowIndex + 1}행 삭제`}>×</button></td>}</tr>)}
+    </tbody></table></div>;
   }
 
   return <div id={block.id} className={`content-block ${editing ? "is-editing" : ""} ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""}`}
@@ -94,9 +112,19 @@ const slashOptions = [
   { type: "code", label: "코드", hint: "코드 또는 프롬프트 블록", symbol: "</>" },
   { type: "image", label: "이미지", hint: "이미지 파일을 본문에 삽입", symbol: "▧" },
   { type: "callout", label: "콜아웃", hint: "강조할 안내문", symbol: "!" },
-  { type: "table", label: "표", hint: "3 × 3 기본 표", symbol: "▦" },
+  { type: "table", label: "표", hint: "행과 열을 자유롭게 편집", symbol: "▦" },
   { type: "attachment", label: "첨부파일", hint: "PDF, PPT, PNG, XLSX 등 업로드", symbol: "↑" },
 ] as const;
+
+function clipboardImage(event: ClipboardEvent<HTMLTextAreaElement>) {
+  const item = Array.from(event.clipboardData.items).find((candidate) => candidate.kind === "file" && candidate.type.startsWith("image/"));
+  const image = item?.getAsFile();
+  if (!image) return null;
+  event.preventDefault();
+  if (image.name) return image;
+  const extension = image.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+  return new File([image], `clipboard-${Date.now()}.${extension}`, { type: image.type });
+}
 
 export function AICoeHub() {
   const [post, setPost] = useState<Post | null>(seedPost);
@@ -325,6 +353,18 @@ export function AICoeHub() {
     if (block.type === "image") updateBlock(block.id, { ...block, url: result.url, caption: file.name });
   }
 
+  async function pasteImage(file: File, afterId?: string) {
+    const result = await uploadAsset(file);
+    if (!result) return;
+    const image: ContentBlock = { id: `block-${Date.now()}`, type: "image", url: result.url, caption: file.name || "붙여넣은 이미지", width: 100 };
+    if (afterId) insertBlockAfterId(afterId, image);
+    else {
+      setPost((current) => current ? { ...current, blocks: [...current.blocks, ...blocksWithDraft(image)] } : current);
+      setDraftText("");
+      setSaved(false);
+    }
+  }
+
   async function savePost() {
     if (!post) return;
     setSaving(true);
@@ -382,15 +422,15 @@ export function AICoeHub() {
               <div className="article-rule" />
               <div className="blocks">
                 {post.blocks.map((block) => <BlockView key={block.id} block={block} editing={admin} onChange={(next) => updateBlock(block.id, next)}
-                  onDelete={() => setPost((current) => current ? { ...current, blocks: current.blocks.filter((item) => item.id !== block.id) } : current)} onInsertAfter={() => insertParagraphAfter(block.id)} onReplaceFile={(file) => replaceBlockFile(block, file)}
+                  onDelete={() => setPost((current) => current ? { ...current, blocks: current.blocks.filter((item) => item.id !== block.id) } : current)} onInsertAfter={() => insertParagraphAfter(block.id)} onReplaceFile={(file) => replaceBlockFile(block, file)} onPasteImage={(file) => pasteImage(file, block.id)}
                   onSlashCommand={(type) => handleInlineSlash(block.id, type)}
                   onDragStart={(event) => { setDraggedId(block.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", block.id); }} onDragEnter={() => draggedId && setDropTargetId(block.id)}
                   onDrop={() => { if (draggedId) moveBlock(draggedId, block.id); setDraggedId(null); setDropTargetId(null); }} onDragEnd={() => { setDraggedId(null); setDropTargetId(null); }} isDragging={draggedId === block.id} isDropTarget={dropTargetId === block.id && draggedId !== block.id} />)}
               </div>
 
               {admin && <div className="slash-editor">
-                <div className="slash-line"><span>＋</span><textarea value={draftText} onChange={(event) => setDraftText(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); addParagraph(); } }} rows={4} placeholder="새 내용을 입력하세요. '/'를 누르면 블록과 첨부파일을 추가할 수 있습니다." aria-label="새 내용 입력" /></div>
-                <div className="composer-actions"><span>Enter 줄바꿈 · ⌘/Ctrl + Enter 문단 추가</span><button onClick={addParagraph} disabled={!draftText.trim()}>내용 추가</button></div>
+                <div className="slash-line"><span>＋</span><textarea value={draftText} onChange={(event) => setDraftText(event.target.value)} onPaste={(event) => { const file = clipboardImage(event); if (file) pasteImage(file); }} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); addParagraph(); } }} rows={4} placeholder="새 내용을 입력하세요. '/'로 블록 추가 · 이미지는 Ctrl/⌘ + V로 붙여넣기" aria-label="새 내용 입력" /></div>
+                <div className="composer-actions"><span>Enter 줄바꿈 · Ctrl/⌘ + V 이미지 붙여넣기 · ⌘/Ctrl + Enter 문단 추가</span><button onClick={addParagraph} disabled={!draftText.trim()}>내용 추가</button></div>
                 {showSlashMenu && <div className="slash-menu"><p>기본 블록</p>{slashOptions.map((option) => <button key={option.type} onClick={() => { setPendingInsertAfterId(null); if (option.type === "image") imageInput.current?.click(); else if (option.type === "attachment") attachmentInput.current?.click(); else addBlock(option.type); }}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
                 {uploading && <p className="upload-status">파일을 업로드하고 있습니다…</p>}{uploadError && <p className="upload-error">{uploadError}</p>}
                 <input ref={imageInput} className="visually-hidden" type="file" accept="image/*" onChange={(event) => uploadFile(event, "image")} />

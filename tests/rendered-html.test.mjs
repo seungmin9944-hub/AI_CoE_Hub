@@ -15,7 +15,11 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
 
   await access(new URL("../dist/server/index.js", import.meta.url));
   assert.match(client, /관리자 모드/);
-  assert.match(client, /첨부파일을 추가할 수 있습니다/);
+  assert.match(client, /Ctrl\/⌘ \+ V 이미지 붙여넣기/);
+  assert.match(client, /clipboardImage/);
+  assert.match(client, /image-size-control/);
+  assert.match(client, /행 추가/);
+  assert.match(client, /열 추가/);
   assert.match(client, /PDF, PPT, PNG, XLSX/);
   assert.match(client, /ideaMailto/);
   assert.match(client, /pagination\.hasPrevious/);

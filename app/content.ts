@@ -17,6 +17,7 @@ export type ImageBlock = {
   type: "image";
   url: string;
   caption: string;
+  width?: number;
 };
 
 export type AttachmentBlock = {
