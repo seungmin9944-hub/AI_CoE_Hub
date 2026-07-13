@@ -44,8 +44,7 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(adminAuth, /RSASSA-PKCS1-v1_5/);
   assert.match(adminAuth, /ADMIN_EMAILS/);
   assert.match(adminPage, /한화이센셜 AI CoE 관리자 로그인/);
-  assert.match(adminPage, /Cloudflare로 로그인/);
-  assert.match(adminPage, /cdn-cgi\/access\/logout/);
+  assert.match(adminPage, /redirect\(adminPortalUrl\)/);
   assert.match(adminProxy, /SITE_ORIGIN/);
   assert.match(adminProxy, /x-ai-coe-access-token/);
   assert.match(hosting, /"d1": "DB"/);
