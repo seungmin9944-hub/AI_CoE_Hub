@@ -7,6 +7,9 @@ export default {
 
     const target = new URL(`${incoming.pathname}${incoming.search}`, SITE_ORIGIN);
     const headers = new Headers(request.headers);
+    headers.delete("host");
+    headers.delete("content-length");
+    headers.delete("connection");
     const accessToken = request.headers.get("cf-access-jwt-assertion");
     const accessEmail = request.headers.get("cf-access-authenticated-user-email");
     if (accessToken) headers.set("x-ai-coe-access-token", accessToken);
@@ -16,13 +19,12 @@ export default {
     }
     headers.set("x-forwarded-host", incoming.host);
     headers.set("x-forwarded-proto", "https");
-    const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
 
-    return fetch(new Request(target, {
+    return fetch(target, {
       method: request.method,
       headers,
-      body,
+      body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
       redirect: "manual",
-    }));
+    });
   },
 };

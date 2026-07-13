@@ -42,7 +42,10 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(postsApi, /export async function POST/);
   assert.match(postsApi, /관리자 권한이 필요합니다/);
   assert.match(filesApi, /bucket\.put/);
-  assert.match(uploadApi, /file\.arrayBuffer/);
+  assert.match(client, /x-ai-coe-file-name/);
+  assert.match(client, /body: file/);
+  assert.match(uploadApi, /request\.arrayBuffer/);
+  assert.match(uploadApi, /multipart\/form-data/);
   assert.match(uploadApi, /R2 upload failed/);
   assert.match(uploadApi, /isAdminUser/);
   assert.match(adminAuth, /cf-access-jwt-assertion/);
@@ -55,7 +58,8 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(adminProxy, /SITE_ORIGIN/);
   assert.match(adminProxy, /x-ai-coe-access-token/);
   assert.match(adminProxy, /x-ai-coe-proxy-secret/);
-  assert.match(adminProxy, /request\.arrayBuffer/);
+  assert.match(adminProxy, /request\.body/);
+  assert.match(adminProxy, /headers\.delete\("content-length"\)/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "FILES"/);
 });

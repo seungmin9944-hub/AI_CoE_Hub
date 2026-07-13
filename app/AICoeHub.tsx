@@ -304,16 +304,32 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
     setUploading(true);
     setUploadError("");
     try {
-      const form = new FormData();
-      form.append("file", file, file.name || `clipboard-${Date.now()}.png`);
-      const response = await fetch("/api/files", { method: "POST", body: form });
+      const fileName = file.name || `clipboard-${Date.now()}.png`;
+      const response = await fetch("/api/files", {
+        method: "POST",
+        headers: {
+          "content-type": file.type || "application/octet-stream",
+          "x-ai-coe-file-name": encodeURIComponent(fileName),
+        },
+        body: file,
+      });
       if (response.status === 401) {
         setUploadError("관리자 인증이 만료되었거나 허용되지 않은 계정입니다. 관리자 주소에서 다시 로그인해 주세요.");
         return null;
       }
-      const result = await response.json().catch(() => ({ error: "파일 업로드에 실패했습니다." }));
+      const responseText = await response.text();
+      let result: { error?: string; url?: string; name?: string; size?: number } = {};
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        result = {};
+      }
       if (!response.ok) {
-        setUploadError(result.error ?? "파일 업로드에 실패했습니다.");
+        setUploadError(result.error ?? `파일 업로드에 실패했습니다. (${response.status})`);
+        return null;
+      }
+      if (!result.url || typeof result.size !== "number") {
+        setUploadError("파일 저장 결과를 확인할 수 없습니다. 다시 시도해 주세요.");
         return null;
       }
       return result as { url: string; name: string; size: number };
