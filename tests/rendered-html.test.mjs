@@ -3,10 +3,14 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the AI CoE knowledge hub and backend routes", async () => {
-  const [client, content, postsApi, filesApi, uploadApi, adminAuth, adminPage, adminProxy, hosting] = await Promise.all([
+  const [client, content, postsApi, settingsApi, siteSettings, schema, settingsMigration, filesApi, uploadApi, adminAuth, adminPage, adminProxy, hosting] = await Promise.all([
     readFile(new URL("../app/AICoeHub.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/content.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/posts/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/settings/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/site-settings.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0002_pale_scarlet_spider.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/api/files/[...key]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/files/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/admin-auth.ts", import.meta.url), "utf8"),
@@ -36,6 +40,11 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(client, /URL 링크/);
   assert.match(client, /plainRichText/);
   assert.match(client, /adminPortalUrl/);
+  assert.match(client, /nav-title-editor/);
+  assert.match(client, /siteSettings\.categoryLabels/);
+  assert.match(client, /findTriggerAtCursor/);
+  assert.match(client, /text\.slice\(0, safeCursor\)/);
+  assert.doesNotMatch(client, /백엔드에 저장된 게시물/);
   assert.doesNotMatch(client, /실습 가이드/);
   assert.match(client, /navigator\.clipboard\.writeText/);
   assert.match(content, /엑셀 보고서의 종말 선언/);
@@ -46,6 +55,13 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(postsApi, /totalPages/);
   assert.match(postsApi, /export async function POST/);
   assert.match(postsApi, /관리자 권한이 필요합니다/);
+  assert.match(settingsApi, /CREATE TABLE IF NOT EXISTS site_settings/);
+  assert.match(settingsApi, /ON CONFLICT\(key\) DO UPDATE/);
+  assert.match(settingsApi, /isAdminUser/);
+  assert.match(siteSettings, /EXPLORE/);
+  assert.match(siteSettings, /categoryLabels/);
+  assert.match(schema, /siteSettings = sqliteTable\("site_settings"/);
+  assert.match(settingsMigration, /CREATE TABLE `site_settings`/);
   assert.match(filesApi, /bucket\.put/);
   assert.match(client, /x-ai-coe-file-name/);
   assert.match(client, /body: file/);

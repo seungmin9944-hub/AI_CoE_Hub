@@ -14,3 +14,9 @@ export const posts = sqliteTable("posts", {
   blocks: text("blocks").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const siteSettings = sqliteTable("site_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
