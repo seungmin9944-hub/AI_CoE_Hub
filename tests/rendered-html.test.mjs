@@ -32,11 +32,16 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(client, /목차와 본문 제목 추가/);
   assert.match(client, /activeHeadingId/);
   assert.match(client, /inline-slash-menu/);
+  assert.match(client, /TextFormatMenu/);
+  assert.match(client, /URL 링크/);
+  assert.match(client, /plainRichText/);
   assert.match(client, /adminPortalUrl/);
   assert.doesNotMatch(client, /실습 가이드/);
   assert.match(client, /navigator\.clipboard\.writeText/);
   assert.match(content, /엑셀 보고서의 종말 선언/);
   assert.match(content, /category: "업무 자동화"/);
+  assert.match(content, /textSize\?:/);
+  assert.match(content, /type: "link"/);
   assert.match(postsApi, /CREATE TABLE IF NOT EXISTS posts/);
   assert.match(postsApi, /totalPages/);
   assert.match(postsApi, /export async function POST/);

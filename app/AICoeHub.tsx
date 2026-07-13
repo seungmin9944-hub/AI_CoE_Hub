@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, ClipboardEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { seedPost, type ContentBlock, type Post, type TableBlock } from "./content";
+import { seedPost, type ContentBlock, type Post, type TableBlock, type TextBlock } from "./content";
 
 const categories = ["전체 콘텐츠", "프롬프트", "AI 트렌드", "업무 자동화"];
 const categoryOptions = ["프롬프트", "AI 트렌드", "업무 자동화"];
@@ -18,7 +18,86 @@ type Pagination = {
 };
 
 const emptyPagination: Pagination = { page: 1, pageSize: 1, totalItems: 0, totalPages: 0, hasPrevious: false, hasNext: false };
-type SlashCommandType = "code" | "image" | "callout" | "table" | "attachment";
+type SlashCommandType = "code" | "image" | "callout" | "table" | "attachment" | "link";
+type TextSize = NonNullable<TextBlock["textSize"]>;
+type FormatCommand =
+  | { type: "size"; value: TextSize }
+  | { type: "bold" | "underline" | "highlight" }
+  | { type: "emoji"; value: string };
+
+const slashTrigger = /(^|\s)\/[^\s/]*$/;
+const formatTrigger = /(^|\s)\/\/[^\s/]*$/;
+
+function cleanSlashTrigger(text: string) {
+  return text.replace(/(^|\s)\/[^\s/]*$/, "$1").trimEnd();
+}
+
+function cleanFormatTrigger(text: string) {
+  return text.replace(/(^|\s)\/\/[^\s/]*$/, "$1").trimEnd();
+}
+
+function plainRichText(text: string) {
+  return text.replace(/\*\*([\s\S]+?)\*\*/g, "$1").replace(/__([\s\S]+?)__/g, "$1").replace(/==([\s\S]+?)==/g, "$1");
+}
+
+function renderRichText(text: string) {
+  return text.split(/(\*\*[\s\S]+?\*\*|__[\s\S]+?__|==[\s\S]+?==)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("__") && part.endsWith("__")) return <u key={index}>{part.slice(2, -2)}</u>;
+    if (part.startsWith("==") && part.endsWith("==")) return <mark key={index}>{part.slice(2, -2)}</mark>;
+    return part;
+  });
+}
+
+function normalizedHref(value: string) {
+  const url = value.trim();
+  if (!url) return "#";
+  if (/^(https?:\/\/|mailto:|tel:|\/|#)/i.test(url)) return url;
+  return `https://${url}`;
+}
+
+function formatText(text: string, selection: { start: number; end: number }, command: FormatCommand) {
+  const match = text.match(formatTrigger);
+  const triggerStart = match?.index ?? text.length;
+  const cleanText = cleanFormatTrigger(text);
+  if (command.type === "size") return { text: cleanText, cursorStart: cleanText.length, cursorEnd: cleanText.length };
+
+  const canWrapSelection = selection.end > selection.start && selection.end <= triggerStart;
+  const start = canWrapSelection ? selection.start : cleanText.length;
+  const end = canWrapSelection ? selection.end : cleanText.length;
+  const selected = canWrapSelection ? cleanText.slice(start, end) : "";
+  const replacement = command.type === "emoji" ? command.value
+    : command.type === "bold" ? `**${selected || "굵은 텍스트"}**`
+      : command.type === "underline" ? `__${selected || "밑줄 텍스트"}__`
+        : `==${selected || "하이라이트 텍스트"}==`;
+  const nextText = `${cleanText.slice(0, start)}${replacement}${cleanText.slice(end)}`;
+  const placeholderOffset = command.type === "bold" || command.type === "underline" || command.type === "highlight" ? 2 : 0;
+  return {
+    text: nextText,
+    cursorStart: start + placeholderOffset,
+    cursorEnd: start + replacement.length - placeholderOffset,
+  };
+}
+
+function TextFormatMenu({ onCommand }: { onCommand: (command: FormatCommand) => void }) {
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const sizes: Array<{ value: TextSize; label: string; symbol: string }> = [
+    { value: "small", label: "작은 텍스트", symbol: "T-" },
+    { value: "normal", label: "기본 텍스트", symbol: "T" },
+    { value: "large", label: "큰 텍스트", symbol: "T+" },
+    { value: "xlarge", label: "매우 큰 텍스트", symbol: "T++" },
+  ];
+  return <div className="text-format-menu" onMouseDown={(event) => event.preventDefault()}>
+    <p>텍스트 서식</p>
+    {sizes.map((size) => <button key={size.value} onClick={() => onCommand({ type: "size", value: size.value })}><span>{size.symbol}</span><div><strong>{size.label}</strong><small>현재 블록의 글자 크기 변경</small></div></button>)}
+    <div className="format-divider" />
+    <button onClick={() => onCommand({ type: "bold" })}><span><b>B</b></span><div><strong>굵게</strong><small>선택 영역 또는 새 텍스트를 굵게</small></div></button>
+    <button onClick={() => onCommand({ type: "underline" })}><span><u>U</u></span><div><strong>밑줄</strong><small>선택 영역 또는 새 텍스트에 밑줄</small></div></button>
+    <button onClick={() => onCommand({ type: "highlight" })}><span className="highlight-symbol">A</span><div><strong>하이라이트</strong><small>선택 영역 또는 새 텍스트 강조</small></div></button>
+    <button onClick={() => setEmojiOpen((value) => !value)}><span>☺</span><div><strong>이모지</strong><small>업무에 맞는 이모지 삽입</small></div></button>
+    {emojiOpen && <div className="emoji-grid" aria-label="이모지 선택">{["✨", "📌", "✅", "💡", "🚀", "📂", "⚡", "🎯", "📊", "🤖", "👏", "🔗"].map((emoji) => <button key={emoji} onClick={() => onCommand({ type: "emoji", value: emoji })}>{emoji}</button>)}</div>}
+  </div>;
+}
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -46,13 +125,30 @@ function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplac
   isDragging: boolean;
   isDropTarget: boolean;
 }) {
-  const inlineSlashOpen = editing && (block.type === "heading" || block.type === "paragraph" || block.type === "callout") && /(^|\s)\/[^\s/]*$/.test(block.text);
+  const textEditorRef = useRef<HTMLTextAreaElement>(null);
+  const selectionRef = useRef({ start: 0, end: 0 });
+  const richTextBlock = block.type === "heading" || block.type === "paragraph" || block.type === "callout";
+  const inlineFormatOpen = editing && richTextBlock && formatTrigger.test(block.text);
+  const inlineSlashOpen = editing && richTextBlock && !inlineFormatOpen && slashTrigger.test(block.text);
+
+  function applyBlockFormat(command: FormatCommand) {
+    if (!("text" in block)) return;
+    const formatted = formatText(block.text, selectionRef.current, command);
+    const next = command.type === "size" ? { ...block, text: formatted.text, textSize: command.value } : { ...block, text: formatted.text };
+    onChange(next as ContentBlock);
+    window.requestAnimationFrame(() => {
+      textEditorRef.current?.focus();
+      textEditorRef.current?.setSelectionRange(formatted.cursorStart, formatted.cursorEnd);
+    });
+  }
+
   const editor = (className: string) => {
     if (!("text" in block)) return null;
-    return editing ? <textarea className={`block-input ${className}`} value={block.text} rows={Math.max(1, block.text.split("\n").length)}
+    return editing ? <textarea ref={textEditorRef} className={`block-input ${className}`} value={block.text} rows={Math.max(1, block.text.split("\n").length)}
       onChange={(event) => onChange({ ...block, text: event.target.value })}
+      onSelect={(event) => { selectionRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; }}
       onPaste={(event) => { const file = clipboardImage(event); if (file) onPasteImage(file); }}
-      aria-label="블록 내용 편집" /> : <span>{block.text}</span>;
+      aria-label="블록 내용 편집" /> : <span className="rich-text">{renderRichText(block.text)}</span>;
   };
 
   let content: React.ReactNode;
@@ -78,6 +174,9 @@ function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplac
       <label className="image-size-control"><span>크기 {imageWidth}%</span><input type="range" min="20" max="100" step="5" value={imageWidth} onChange={(event) => onChange({ ...block, width: Number(event.target.value) })} /></label>
       <div className="image-size-presets" aria-label="이미지 크기 빠른 선택">{[25, 50, 75, 100].map((size) => <button key={size} className={imageWidth === size ? "active" : ""} onClick={() => onChange({ ...block, width: size })}>{size}%</button>)}</div>
     </div>}{editing ? <input value={block.caption} onChange={(event) => onChange({ ...block, caption: event.target.value })} placeholder="이미지 설명" /> : <figcaption>{block.caption}</figcaption>}</figure>;
+  } else if (block.type === "link") {
+    content = editing ? <div className="link-card link-card-editing"><span className="link-icon">↗</span><label>표시 텍스트<input value={block.label} onChange={(event) => onChange({ ...block, label: event.target.value })} /></label><label>URL<input value={block.url} onChange={(event) => onChange({ ...block, url: event.target.value })} placeholder="https://" /></label><a href={normalizedHref(block.url)} target="_blank" rel="noreferrer">열기</a></div>
+      : <a className="link-card" href={normalizedHref(block.url)} target="_blank" rel="noreferrer"><span className="link-icon">↗</span><span><strong>{block.label || block.url}</strong><small>{block.url}</small></span><em>링크 열기</em></a>;
   } else {
     const table = block as TableBlock;
     const columnCount = Math.max(1, ...table.rows.map((row) => row.length));
@@ -99,11 +198,13 @@ function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplac
     </tbody></table></div>;
   }
 
-  return <div id={block.id} className={`content-block ${editing ? "is-editing" : ""} ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""}`}
+  const textSize = "textSize" in block ? block.textSize ?? "normal" : "normal";
+  return <div id={block.id} className={`content-block text-size-${textSize} ${editing ? "is-editing" : ""} ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""}`}
     onDragOver={(event) => { if (editing) event.preventDefault(); }} onDragEnter={() => editing && onDragEnter()} onDrop={(event) => { if (editing) { event.preventDefault(); onDrop(); } }}>
     {editing && <div className="block-controls"><button className="drag-handle" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} aria-label="블록 순서 이동">⋮⋮</button><button className="delete-block" onClick={onDelete} aria-label="블록 삭제">×</button></div>}
     {content}
     {inlineSlashOpen && <div className="inline-slash-menu"><p>블록 추가</p>{slashOptions.map((option) => <button key={option.type} onClick={() => onSlashCommand(option.type)}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
+    {inlineFormatOpen && <TextFormatMenu onCommand={applyBlockFormat} />}
     {editing && <button className="insert-after" onClick={onInsertAfter}>＋ 이 아래에 텍스트 추가</button>}
   </div>;
 }
@@ -114,6 +215,7 @@ const slashOptions = [
   { type: "callout", label: "콜아웃", hint: "강조할 안내문", symbol: "!" },
   { type: "table", label: "표", hint: "행과 열을 자유롭게 편집", symbol: "▦" },
   { type: "attachment", label: "첨부파일", hint: "PDF, PPT, PNG, XLSX 등 업로드", symbol: "↑" },
+  { type: "link", label: "URL 링크", hint: "클릭 가능한 웹 주소 삽입", symbol: "↗" },
 ] as const;
 
 function clipboardImage(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -137,6 +239,7 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   const [saved, setSaved] = useState(false);
   const [creating, setCreating] = useState(false);
   const [draftText, setDraftText] = useState("");
+  const [draftTextSize, setDraftTextSize] = useState<TextSize>("normal");
   const [newTocTitle, setNewTocTitle] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -149,6 +252,8 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   const [indicator, setIndicator] = useState({ top: 0, height: 0 });
   const imageInput = useRef<HTMLInputElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
+  const draftTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const draftSelectionRef = useRef({ start: 0, end: 0 });
   const tocLinksRef = useRef<HTMLDivElement>(null);
   const tocItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -174,7 +279,8 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   }, [category, page, search, refreshKey]);
 
   const headings = useMemo(() => post?.blocks.filter((block) => block.type === "heading") ?? [], [post?.blocks]);
-  const showSlashMenu = /(^|\s)\/[^\s/]*$/.test(draftText);
+  const showFormatMenu = formatTrigger.test(draftText);
+  const showSlashMenu = !showFormatMenu && slashTrigger.test(draftText);
 
   useEffect(() => {
     if (!headings.length) { setActiveHeadingId(""); return; }
@@ -232,25 +338,26 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   }
 
   function blocksWithDraft(block?: ContentBlock) {
-    const text = draftText.replace(/(^|\s)\/[^\s/]*$/, "$1").trimEnd();
+    const text = cleanSlashTrigger(draftText);
     const additions: ContentBlock[] = [];
-    if (text.trim()) additions.push({ id: `paragraph-${Date.now()}`, type: "paragraph", text });
+    if (text.trim()) additions.push({ id: `paragraph-${Date.now()}`, type: "paragraph", text, textSize: draftTextSize });
     if (block) additions.push(block);
     return additions;
   }
 
-  function createStructuredBlock(type: "code" | "callout" | "table") {
+  function createStructuredBlock(type: Exclude<SlashCommandType, "image" | "attachment">) {
     const id = `block-${Date.now()}`;
-    return type === "table" ? { id, type, rows: [["항목", "내용", "비고"], ["", "", ""], ["", "", ""]] } as ContentBlock
-      : type === "code" ? { id, type, language: "prompt", text: "여기에 코드 또는 프롬프트를 입력하세요." } as ContentBlock
-        : { id, type, tone: "info", text: "강조할 내용을 입력하세요." } as ContentBlock;
+    if (type === "table") return { id, type, rows: [["항목", "내용", "비고"], ["", "", ""], ["", "", ""]] } as ContentBlock;
+    if (type === "code") return { id, type, language: "prompt", text: "여기에 코드 또는 프롬프트를 입력하세요." } as ContentBlock;
+    if (type === "link") return { id, type, label: "링크 제목", url: "https://" } as ContentBlock;
+    return { id, type, tone: "info", text: "강조할 내용을 입력하세요." } as ContentBlock;
   }
 
   function insertBlockAfterId(targetId: string, newBlock: ContentBlock, cleanSlash = false) {
     setPost((current) => {
       if (!current) return current;
       const blocks = current.blocks.map((block) => cleanSlash && block.id === targetId && "text" in block
-        ? { ...block, text: block.text.replace(/(^|\s)\/[^\s/]*$/, "$1").trimEnd() } as ContentBlock : block);
+        ? { ...block, text: cleanSlashTrigger(block.text) } as ContentBlock : block);
       const index = blocks.findIndex((block) => block.id === targetId);
       blocks.splice(index + 1, 0, newBlock);
       return { ...current, blocks };
@@ -261,7 +368,7 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   function handleInlineSlash(targetId: string, type: SlashCommandType) {
     if (type === "image" || type === "attachment") {
       setPost((current) => current ? { ...current, blocks: current.blocks.map((block) => block.id === targetId && "text" in block
-        ? { ...block, text: block.text.replace(/(^|\s)\/[^\s/]*$/, "$1").trimEnd() } as ContentBlock : block) } : current);
+        ? { ...block, text: cleanSlashTrigger(block.text) } as ContentBlock : block) } : current);
       setPendingInsertAfterId(targetId);
       if (type === "image") imageInput.current?.click();
       else attachmentInput.current?.click();
@@ -270,10 +377,11 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
     insertBlockAfterId(targetId, createStructuredBlock(type), true);
   }
 
-  function addBlock(type: "code" | "callout" | "table") {
+  function addBlock(type: Exclude<SlashCommandType, "image" | "attachment">) {
     const block = createStructuredBlock(type);
     setPost((current) => current ? { ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] } : current);
     setDraftText("");
+    setDraftTextSize("normal");
     setSaved(false);
   }
 
@@ -282,7 +390,18 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
     if (!additions.length) return;
     setPost((current) => current ? { ...current, blocks: [...current.blocks, ...additions] } : current);
     setDraftText("");
+    setDraftTextSize("normal");
     setSaved(false);
+  }
+
+  function applyDraftFormat(command: FormatCommand) {
+    const formatted = formatText(draftText, draftSelectionRef.current, command);
+    setDraftText(formatted.text);
+    if (command.type === "size") setDraftTextSize(command.value);
+    window.requestAnimationFrame(() => {
+      draftTextareaRef.current?.focus();
+      draftTextareaRef.current?.setSelectionRange(formatted.cursorStart, formatted.cursorEnd);
+    });
   }
 
   function addTocHeading() {
@@ -352,6 +471,7 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
       else {
         setPost((current) => current ? { ...current, blocks: [...current.blocks, ...blocksWithDraft(block)] } : current);
         setDraftText("");
+        setDraftTextSize("normal");
       }
       setPendingInsertAfterId(null);
       setSaved(false);
@@ -374,6 +494,7 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
     else {
       setPost((current) => current ? { ...current, blocks: [...current.blocks, ...blocksWithDraft(image)] } : current);
       setDraftText("");
+      setDraftTextSize("normal");
       setSaved(false);
     }
   }
@@ -442,9 +563,10 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
               </div>
 
               {admin && <div className="slash-editor">
-                <div className="slash-line"><span>＋</span><textarea value={draftText} onChange={(event) => setDraftText(event.target.value)} onPaste={(event) => { const file = clipboardImage(event); if (file) pasteImage(file); }} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); addParagraph(); } }} rows={4} placeholder="새 내용을 입력하세요. '/'로 블록 추가 · 이미지는 Ctrl/⌘ + V로 붙여넣기" aria-label="새 내용 입력" /></div>
-                <div className="composer-actions"><span>Enter 줄바꿈 · Ctrl/⌘ + V 이미지 붙여넣기 · ⌘/Ctrl + Enter 문단 추가</span><button onClick={addParagraph} disabled={!draftText.trim()}>내용 추가</button></div>
+                <div className="slash-line"><span>＋</span><textarea ref={draftTextareaRef} value={draftText} onChange={(event) => setDraftText(event.target.value)} onSelect={(event) => { draftSelectionRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; }} onPaste={(event) => { const file = clipboardImage(event); if (file) pasteImage(file); }} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); addParagraph(); } }} rows={4} placeholder="새 내용을 입력하세요. '/' 블록 추가 · '//' 텍스트 서식 · 이미지는 Ctrl/⌘ + V" aria-label="새 내용 입력" /></div>
+                <div className="composer-actions"><span>Enter 줄바꿈 · / 블록 · // 서식 · Ctrl/⌘ + V 이미지 붙여넣기 · ⌘/Ctrl + Enter 추가</span><button onClick={addParagraph} disabled={!draftText.trim()}>내용 추가</button></div>
                 {showSlashMenu && <div className="slash-menu"><p>기본 블록</p>{slashOptions.map((option) => <button key={option.type} onClick={() => { setPendingInsertAfterId(null); if (option.type === "image") imageInput.current?.click(); else if (option.type === "attachment") attachmentInput.current?.click(); else addBlock(option.type); }}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
+                {showFormatMenu && <TextFormatMenu onCommand={applyDraftFormat} />}
                 {uploading && <p className="upload-status">파일을 업로드하고 있습니다…</p>}{uploadError && <p className="upload-error">{uploadError}</p>}
                 <input ref={imageInput} className="visually-hidden" type="file" accept="image/*" onChange={(event) => uploadFile(event, "image")} />
                 <input ref={attachmentInput} className="visually-hidden" type="file" accept={attachmentAccept} onChange={(event) => uploadFile(event, "attachment")} />
@@ -461,9 +583,9 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
         {post && <div className="toc-inner">
           {admin ? <input className="toc-title-editor" value={post.tocTitle} onChange={(event) => setPost({ ...post, tocTitle: event.target.value })} aria-label="목차 제목 편집" /> : <p>{post.tocTitle}</p>}
           <div className="toc-links" ref={tocLinksRef}><div className="toc-progress"><span style={{ top: indicator.top, height: indicator.height }} /></div>
-            {headings.map((heading, index) => <div key={heading.id} ref={(element) => { tocItemRefs.current[heading.id] = element; }} className={`toc-row ${activeHeadingId === heading.id ? "active" : ""}`}>
-              <a href={`#${heading.id}`} onClick={() => setActiveHeadingId(heading.id)}><span>{String(index + 1).padStart(2, "0")}</span>{!admin && "text" in heading ? heading.text.replace(/^[^가-힣A-Za-z\[]+/, "") : ""}</a>
-              {admin && "text" in heading && <input value={heading.text} onChange={(event) => updateBlock(heading.id, { ...heading, text: event.target.value })} aria-label={`${index + 1}번 목차 편집`} />}
+            {headings.map((heading, index) => <div key={heading.id} ref={(element) => { tocItemRefs.current[heading.id] = element; }} className={`toc-row ${admin ? "admin-toc-row" : ""} ${activeHeadingId === heading.id ? "active" : ""}`}>
+              {admin && "text" in heading ? <><a className="toc-number-link" href={`#${heading.id}`} onClick={() => setActiveHeadingId(heading.id)} aria-label={`${index + 1}번 본문으로 이동`}><span>{String(index + 1).padStart(2, "0")}</span></a><input value={plainRichText(heading.text)} onFocus={() => setActiveHeadingId(heading.id)} onChange={(event) => updateBlock(heading.id, { ...heading, text: event.target.value })} aria-label={`${index + 1}번 목차 편집`} /></>
+                : <a href={`#${heading.id}`} onClick={() => setActiveHeadingId(heading.id)}><span>{String(index + 1).padStart(2, "0")}</span><span className="toc-label">{"text" in heading ? plainRichText(heading.text) : ""}</span></a>}
             </div>)}
           </div>
           {admin && <div className="toc-add"><input value={newTocTitle} onChange={(event) => setNewTocTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addTocHeading(); }} placeholder="목차와 본문 제목 추가" /><button onClick={addTocHeading}>＋</button></div>}

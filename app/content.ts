@@ -2,6 +2,7 @@ export type TextBlock = {
   id: string;
   type: "paragraph" | "heading" | "callout" | "code";
   text: string;
+  textSize?: "small" | "normal" | "large" | "xlarge";
   language?: string;
   tone?: "info" | "warning" | "success";
 };
@@ -28,7 +29,14 @@ export type AttachmentBlock = {
   size: string;
 };
 
-export type ContentBlock = TextBlock | TableBlock | ImageBlock | AttachmentBlock;
+export type LinkBlock = {
+  id: string;
+  type: "link";
+  label: string;
+  url: string;
+};
+
+export type ContentBlock = TextBlock | TableBlock | ImageBlock | AttachmentBlock | LinkBlock;
 
 export type Post = {
   id: string;
