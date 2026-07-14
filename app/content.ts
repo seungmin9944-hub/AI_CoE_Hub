@@ -38,6 +38,24 @@ export type LinkBlock = {
 
 export type ContentBlock = TextBlock | TableBlock | ImageBlock | AttachmentBlock | LinkBlock;
 
+export type PostCover = {
+  imageUrl: string;
+  badge: string;
+  kicker: string;
+  titlePrimary: string;
+  titleAccent: string;
+  description: string;
+};
+
+export const defaultPostCover: PostCover = {
+  imageUrl: "",
+  badge: "CLOUDFLARE × EXCEL",
+  kicker: "HANDS-ON LAB · 01",
+  titlePrimary: "DATA TO",
+  titleAccent: "LIVE WEB",
+  description: "엑셀 보고서를 실시간 대시보드로",
+};
+
 export type Post = {
   id: string;
   slug: string;
@@ -49,6 +67,7 @@ export type Post = {
   readTime: string;
   tocTitle: string;
   tags: string[];
+  cover: PostCover;
   blocks: ContentBlock[];
 };
 
@@ -63,6 +82,7 @@ export const seedPost: Post = {
   readTime: "18분",
   tocTitle: "ON THIS PAGE",
   tags: ["Cloudflare", "Excel", "Dashboard", "R2"],
+  cover: defaultPostCover,
   blocks: [
     { id: "b01", type: "callout", tone: "warning", text: "▶️ 유튜브 영상 바로가기\n이 글과 함께 영상을 보며 순서대로 실습해 보세요." },
     { id: "b02", type: "heading", text: "📂 실습파일 다운로드" },

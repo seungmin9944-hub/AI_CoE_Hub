@@ -26,7 +26,9 @@ export async function GET() {
   } catch {
     parsed = null;
   }
-  return NextResponse.json(normalizeSiteSettings(parsed));
+  const response = NextResponse.json(normalizeSiteSettings(parsed));
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  return response;
 }
 
 export async function PUT(request: NextRequest) {

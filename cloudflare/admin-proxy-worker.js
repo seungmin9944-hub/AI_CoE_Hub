@@ -20,11 +20,14 @@ export default {
     headers.set("x-forwarded-host", incoming.host);
     headers.set("x-forwarded-proto", "https");
 
-    return fetch(target, {
+    const response = await fetch(target, {
       method: request.method,
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
       redirect: "manual",
     });
+    const responseHeaders = new Headers(response.headers);
+    responseHeaders.set("cache-control", "no-store, no-cache, must-revalidate");
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers: responseHeaders });
   },
 };

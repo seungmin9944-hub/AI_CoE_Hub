@@ -1,0 +1,1 @@
+ALTER TABLE `posts` ADD `cover` text DEFAULT '{}' NOT NULL;

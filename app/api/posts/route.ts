@@ -1,9 +1,15 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
-import { seedPost, type Post } from "../../content";
+import { defaultPostCover, seedPost, type Post, type PostCover } from "../../content";
 import { isAdminUser } from "../../admin-auth";
 
 type RuntimeEnv = { DB: D1Database };
+
+function noStoreJson(body: unknown, init?: ResponseInit) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  return response;
+}
 
 async function ensureDatabase() {
   const db = (env as unknown as RuntimeEnv).DB;
@@ -19,6 +25,7 @@ async function ensureDatabase() {
       read_time TEXT NOT NULL,
       toc_title TEXT NOT NULL DEFAULT 'ON THIS PAGE',
       tags TEXT NOT NULL,
+      cover TEXT NOT NULL DEFAULT '{}',
       blocks TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )`),
@@ -30,26 +37,31 @@ async function ensureDatabase() {
   if (!columns.results.some((column) => column.name === "toc_title")) {
     await db.prepare("ALTER TABLE posts ADD COLUMN toc_title TEXT NOT NULL DEFAULT 'ON THIS PAGE'").run();
   }
+  if (!columns.results.some((column) => column.name === "cover")) {
+    await db.prepare("ALTER TABLE posts ADD COLUMN cover TEXT NOT NULL DEFAULT '{}'").run();
+  }
 
   const existing = await db.prepare("SELECT id FROM posts WHERE slug = ?").bind(seedPost.slug).first<{ id: string }>();
   if (!existing) {
     await db.prepare(`INSERT INTO posts
-      (id, slug, title, excerpt, category, author, published_at, read_time, toc_title, tags, blocks, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (id, slug, title, excerpt, category, author, published_at, read_time, toc_title, tags, cover, blocks, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(seedPost.id, seedPost.slug, seedPost.title, seedPost.excerpt, seedPost.category, seedPost.author,
         seedPost.publishedAt, seedPost.readTime, seedPost.tocTitle, JSON.stringify(seedPost.tags),
-        JSON.stringify(seedPost.blocks), new Date().toISOString())
+        JSON.stringify(seedPost.cover), JSON.stringify(seedPost.blocks), new Date().toISOString())
       .run();
   }
   return db;
 }
 
 function rowToPost(row: Record<string, unknown>): Post {
+  let cover: Partial<PostCover> = {};
+  try { cover = JSON.parse(String(row.cover ?? "{}")) as Partial<PostCover>; } catch { cover = {}; }
   return {
     id: String(row.id), slug: String(row.slug), title: String(row.title), excerpt: String(row.excerpt),
     category: String(row.category), author: String(row.author), publishedAt: String(row.published_at),
     readTime: String(row.read_time), tocTitle: String(row.toc_title ?? "ON THIS PAGE"),
-    tags: JSON.parse(String(row.tags)), blocks: JSON.parse(String(row.blocks)),
+    tags: JSON.parse(String(row.tags)), cover: { ...defaultPostCover, ...cover }, blocks: JSON.parse(String(row.blocks)),
   };
 }
 
@@ -58,8 +70,8 @@ export async function GET(request: NextRequest) {
   const slug = request.nextUrl.searchParams.get("slug");
   if (slug) {
     const row = await db.prepare("SELECT * FROM posts WHERE slug = ?").bind(slug).first<Record<string, unknown>>();
-    if (!row) return NextResponse.json({ error: "게시물을 찾을 수 없습니다." }, { status: 404 });
-    return NextResponse.json(rowToPost(row));
+    if (!row) return noStoreJson({ error: "게시물을 찾을 수 없습니다." }, { status: 404 });
+    return noStoreJson(rowToPost(row));
   }
 
   const requestedPage = Math.max(1, Number(request.nextUrl.searchParams.get("page") ?? 1) || 1);
@@ -78,7 +90,7 @@ export async function GET(request: NextRequest) {
   const rows = await db.prepare(`SELECT * FROM posts ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`)
     .bind(...bindings, pageSize, offset).all<Record<string, unknown>>();
 
-  return NextResponse.json({
+  return noStoreJson({
     items: rows.results.map(rowToPost),
     pagination: { page, pageSize, totalItems, totalPages, hasPrevious: page > 1, hasNext: totalPages > 0 && page < totalPages },
   });
@@ -101,16 +113,17 @@ export async function POST(request: NextRequest) {
     readTime: "5분",
     tocTitle: "ON THIS PAGE",
     tags: ["AI CoE"],
+    cover: { ...defaultPostCover, badge: "AI CoE", kicker: "NEW CONTENT", titlePrimary: "AI", titleAccent: "CONTENT", description: "새 콘텐츠의 커버 문구를 입력하세요." },
     blocks: [
       { id: `heading-${Date.now()}`, type: "heading", text: "새 섹션" },
       { id: `paragraph-${Date.now()}`, type: "paragraph", text: "여기에 내용을 입력하세요." },
     ],
   };
   await db.prepare(`INSERT INTO posts
-    (id, slug, title, excerpt, category, author, published_at, read_time, toc_title, tags, blocks, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    (id, slug, title, excerpt, category, author, published_at, read_time, toc_title, tags, cover, blocks, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(post.id, post.slug, post.title, post.excerpt, post.category, post.author, post.publishedAt,
-      post.readTime, post.tocTitle, JSON.stringify(post.tags), JSON.stringify(post.blocks), now.toISOString())
+      post.readTime, post.tocTitle, JSON.stringify(post.tags), JSON.stringify(post.cover), JSON.stringify(post.blocks), now.toISOString())
     .run();
   return NextResponse.json(post, { status: 201 });
 }
@@ -123,9 +136,19 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "저장할 게시물 형식이 올바르지 않습니다." }, { status: 400 });
   }
   await db.prepare(`UPDATE posts SET title = ?, excerpt = ?, category = ?, author = ?, published_at = ?,
-    read_time = ?, toc_title = ?, tags = ?, blocks = ?, updated_at = ? WHERE id = ?`)
+    read_time = ?, toc_title = ?, tags = ?, cover = ?, blocks = ?, updated_at = ? WHERE id = ?`)
     .bind(post.title, post.excerpt, post.category, post.author, post.publishedAt, post.readTime, post.tocTitle,
-      JSON.stringify(post.tags), JSON.stringify(post.blocks), new Date().toISOString(), post.id)
+      JSON.stringify(post.tags), JSON.stringify({ ...defaultPostCover, ...post.cover }), JSON.stringify(post.blocks), new Date().toISOString(), post.id)
     .run();
   return NextResponse.json({ ok: true, savedAt: new Date().toISOString() });
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!(await isAdminUser())) return NextResponse.json({ error: "관리자 권한이 필요합니다." }, { status: 401 });
+  const id = request.nextUrl.searchParams.get("id")?.trim();
+  if (!id) return NextResponse.json({ error: "삭제할 게시물 ID가 필요합니다." }, { status: 400 });
+  const db = await ensureDatabase();
+  const result = await db.prepare("DELETE FROM posts WHERE id = ?").bind(id).run();
+  if (!result.meta.changes) return NextResponse.json({ error: "게시물을 찾을 수 없습니다." }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }

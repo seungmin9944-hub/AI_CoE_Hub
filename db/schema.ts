@@ -11,6 +11,7 @@ export const posts = sqliteTable("posts", {
   readTime: text("read_time").notNull(),
   tocTitle: text("toc_title").notNull().default("ON THIS PAGE"),
   tags: text("tags").notNull(),
+  cover: text("cover").notNull().default("{}"),
   blocks: text("blocks").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

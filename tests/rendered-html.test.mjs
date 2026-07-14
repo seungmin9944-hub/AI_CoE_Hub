@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the AI CoE knowledge hub and backend routes", async () => {
-  const [client, content, postsApi, settingsApi, siteSettings, schema, settingsMigration, filesApi, uploadApi, adminAuth, adminPage, adminProxy, hosting] = await Promise.all([
+  const [client, content, postsApi, settingsApi, siteSettings, schema, settingsMigration, coverMigration, filesApi, uploadApi, adminAuth, adminPage, adminProxy, hosting] = await Promise.all([
     readFile(new URL("../app/AICoeHub.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/content.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/posts/route.ts", import.meta.url), "utf8"),
@@ -11,6 +11,7 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
     readFile(new URL("../app/site-settings.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0002_pale_scarlet_spider.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0003_gorgeous_nextwave.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/api/files/[...key]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/files/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/admin-auth.ts", import.meta.url), "utf8"),
@@ -21,7 +22,7 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
 
   await access(new URL("../dist/server/index.js", import.meta.url));
   assert.match(client, /관리자 모드/);
-  assert.match(client, /Ctrl\/⌘ \+ V 이미지 붙여넣기/);
+  assert.match(client, /Ctrl\/⌘ \+ V 이미지/);
   assert.match(client, /clipboardImage/);
   assert.match(client, /clipboardData\.files/);
   assert.match(client, /image-size-control/);
@@ -41,9 +42,23 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(client, /plainRichText/);
   assert.match(client, /adminPortalUrl/);
   assert.match(client, /nav-title-editor/);
-  assert.match(client, /siteSettings\.categoryLabels/);
+  assert.match(client, /addExploreCategory/);
+  assert.match(client, /siteSettings\.categories/);
   assert.match(client, /findTriggerAtCursor/);
   assert.match(client, /text\.slice\(0, safeCursor\)/);
+  assert.match(client, /ImageLightbox/);
+  assert.match(client, /max="200"/);
+  assert.match(client, /ArrowRight/);
+  assert.match(client, /ArrowDown/);
+  assert.match(client, /event\.key === " "/);
+  assert.match(client, /block-rich-editor/);
+  assert.match(client, /editorHtmlToRichText/);
+  assert.match(client, /커버 이미지 교체/);
+  assert.match(client, /normal-mode-button/);
+  assert.match(client, /undoHistory/);
+  assert.match(client, /length > 20/);
+  assert.match(client, /deletePost/);
+  assert.match(client, /ideaRecipients\.join\(";%20"\)/);
   assert.doesNotMatch(client, /백엔드에 저장된 게시물/);
   assert.doesNotMatch(client, /실습 가이드/);
   assert.match(client, /navigator\.clipboard\.writeText/);
@@ -54,14 +69,20 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(postsApi, /CREATE TABLE IF NOT EXISTS posts/);
   assert.match(postsApi, /totalPages/);
   assert.match(postsApi, /export async function POST/);
+  assert.match(postsApi, /export async function DELETE/);
+  assert.match(postsApi, /Cache-Control/);
+  assert.match(postsApi, /ALTER TABLE posts ADD COLUMN cover/);
   assert.match(postsApi, /관리자 권한이 필요합니다/);
   assert.match(settingsApi, /CREATE TABLE IF NOT EXISTS site_settings/);
   assert.match(settingsApi, /ON CONFLICT\(key\) DO UPDATE/);
   assert.match(settingsApi, /isAdminUser/);
   assert.match(siteSettings, /EXPLORE/);
-  assert.match(siteSettings, /categoryLabels/);
+  assert.match(siteSettings, /defaultCategories/);
+  assert.match(siteSettings, /heroTitlePrimary/);
   assert.match(schema, /siteSettings = sqliteTable\("site_settings"/);
+  assert.match(schema, /cover: text\("cover"\)/);
   assert.match(settingsMigration, /CREATE TABLE `site_settings`/);
+  assert.match(coverMigration, /ALTER TABLE `posts` ADD `cover`/);
   assert.match(filesApi, /bucket\.put/);
   assert.match(client, /x-ai-coe-file-name/);
   assert.match(client, /body: file/);
@@ -82,6 +103,7 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(adminProxy, /x-ai-coe-proxy-secret/);
   assert.match(adminProxy, /request\.body/);
   assert.match(adminProxy, /headers\.delete\("content-length"\)/);
+  assert.match(adminProxy, /cache-control/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "FILES"/);
 });
