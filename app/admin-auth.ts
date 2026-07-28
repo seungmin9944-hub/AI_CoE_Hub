@@ -61,10 +61,10 @@ async function verifyAccessToken(token: string, teamDomain: string, audience: st
   if (payload.iss !== issuer || !audiences.includes(audience) || !payload.exp || payload.exp < now - 60 || (payload.nbf && payload.nbf > now + 60)) return null;
 
   let jwks = await getJwks(issuer);
-  let jwk = jwks?.keys?.find((candidate) => candidate.kid === tokenHeader.kid);
+  let jwk = jwks?.keys?.find((candidate) => (candidate as JsonWebKey & { kid?: string }).kid === tokenHeader.kid);
   if (!jwk) {
     jwks = await getJwks(issuer, true);
-    jwk = jwks?.keys?.find((candidate) => candidate.kid === tokenHeader.kid);
+    jwk = jwks?.keys?.find((candidate) => (candidate as JsonWebKey & { kid?: string }).kid === tokenHeader.kid);
   }
   if (!jwk) return null;
 

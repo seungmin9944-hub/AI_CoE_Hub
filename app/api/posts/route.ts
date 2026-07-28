@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
-import { defaultPostCover, seedPost, type Post, type PostCover } from "../../content";
+import { defaultPostCover, seedPost, type ContentBlock, type Post, type PostCover } from "../../content";
 import { isAdminUser } from "../../admin-auth";
 
 type RuntimeEnv = { DB: D1Database };
@@ -99,22 +99,30 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   if (!(await isAdminUser())) return NextResponse.json({ error: "관리자 권한이 필요합니다." }, { status: 401 });
   const db = await ensureDatabase();
-  const body = await request.json().catch(() => ({})) as { category?: string; title?: string };
+  const body = await request.json().catch(() => ({})) as {
+    category?: string;
+    title?: string;
+    excerpt?: string;
+    readTime?: string;
+    tags?: string[];
+    cover?: Partial<PostCover>;
+    blocks?: ContentBlock[];
+  };
   const id = crypto.randomUUID();
   const now = new Date();
   const post: Post = {
     id,
     slug: `content-${Date.now()}-${id.slice(0, 6)}`,
     title: body.title?.trim() || "새 AI 콘텐츠",
-    excerpt: "콘텐츠 요약을 입력하세요.",
+    excerpt: body.excerpt?.trim() || "콘텐츠 요약을 입력하세요.",
     category: body.category?.trim() || "업무 자동화",
     author: "AI CoE",
     publishedAt: new Intl.DateTimeFormat("ko-KR").format(now),
-    readTime: "5분",
+    readTime: body.readTime?.trim() || "5분",
     tocTitle: "ON THIS PAGE",
-    tags: ["AI CoE"],
-    cover: { ...defaultPostCover, badge: "AI CoE", kicker: "NEW CONTENT", titlePrimary: "AI", titleAccent: "CONTENT", description: "새 콘텐츠의 커버 문구를 입력하세요." },
-    blocks: [
+    tags: Array.isArray(body.tags) && body.tags.length ? body.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 20) : ["AI CoE"],
+    cover: { ...defaultPostCover, badge: "AI CoE", kicker: "NEW CONTENT", titlePrimary: "AI", titleAccent: "CONTENT", description: "새 콘텐츠의 커버 문구를 입력하세요.", ...(body.cover ?? {}) },
+    blocks: Array.isArray(body.blocks) && body.blocks.length ? body.blocks.slice(0, 300) : [
       { id: `heading-${Date.now()}`, type: "heading", text: "새 섹션" },
       { id: `paragraph-${Date.now()}`, type: "paragraph", text: "여기에 내용을 입력하세요." },
     ],
@@ -148,7 +156,7 @@ export async function DELETE(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id")?.trim();
   if (!id) return NextResponse.json({ error: "삭제할 게시물 ID가 필요합니다." }, { status: 400 });
   const db = await ensureDatabase();
-  const result = await db.prepare("DELETE FROM posts WHERE id = ?").bind(id).run();
+  const result = await db.prepare("DELETE FROM posts WHERE id = ?").bind(id).run() as { meta: { changes?: number } };
   if (!result.meta.changes) return NextResponse.json({ error: "게시물을 찾을 수 없습니다." }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

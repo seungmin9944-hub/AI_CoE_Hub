@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { BookOpen, FileUp, GraduationCap, House, Sparkles, TrendingUp, Zap } from "lucide-react";
 import { defaultPostCover, seedPost, type ContentBlock, type Post, type TableBlock, type TextBlock } from "./content";
 import { defaultSiteSettings, type SiteCategory, type SiteSettings } from "./site-settings";
 
@@ -8,6 +9,7 @@ const ideaRecipients = ["seungmin.kim@hanwha.com", "ghcho08@hanwha.com", "taewon
 const ideaMailto = `mailto:${ideaRecipients.join(";%20")}?subject=%5BAI%20CoE%5D%20AI%20%ED%99%9C%EC%9A%A9%20%EC%95%84%EC%9D%B4%EB%94%94%EC%96%B4%20%EC%A0%9C%EC%95%88`;
 const publicSiteUrl = "https://hanwha-essential-ai-coe.reppy1182952347.chatgpt.site";
 const attachmentAccept = ".pdf,.ppt,.pptx,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.zip,.doc,.docx,.txt,.html";
+const documentImportAccept = ".docx,.pptx,.pdf";
 
 type Pagination = {
   page: number;
@@ -29,6 +31,27 @@ type FormatCommand =
 type EditorSnapshot = { post: Post | null; settings: SiteSettings };
 
 type TriggerKind = "slash" | "format";
+
+type ImportedDocumentResult = {
+  title: string;
+  excerpt: string;
+  readTime: string;
+  tags: string[];
+  blocks: ContentBlock[];
+  attachment: { id: string; type: "attachment"; name: string; url: string; size: number };
+};
+
+function CategoryIcon({ category }: { category: SiteCategory }) {
+  const key = `${category.id} ${category.label}`.toLowerCase();
+  const Icon = key.includes("용어") ? BookOpen
+    : key.includes("교육") ? GraduationCap
+      : key.includes("전체") ? House
+        : key.includes("프롬프트") ? Sparkles
+          : key.includes("트렌드") ? TrendingUp
+            : key.includes("자동화") ? Zap
+              : null;
+  return <span className="nav-icon" aria-hidden="true">{Icon ? <Icon size={18} strokeWidth={1.8} /> : category.icon}</span>;
+}
 
 const formatMenuItems: Array<{ command: FormatCommand; label: string; hint: string; symbol: string }> = [
   { command: { type: "size", value: "small" }, label: "작은 텍스트", hint: "현재 블록의 글자 크기 변경", symbol: "T-" },
@@ -391,6 +414,8 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
   const [draftText, setDraftText] = useState("");
   const [draftTextSize, setDraftTextSize] = useState<TextSize>("normal");
   const [draftTriggerContext, setDraftTriggerContext] = useState({ text: "", cursor: 0 });
@@ -409,6 +434,7 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
   const imageInput = useRef<HTMLInputElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
+  const documentImportInput = useRef<HTMLInputElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
   const draftRichEditorRef = useRef<HTMLSpanElement>(null);
   const tocLinksRef = useRef<HTMLDivElement>(null);
@@ -482,25 +508,41 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
 
   useEffect(() => {
     if (!headings.length) { setActiveHeadingId(""); return; }
+    let frame = 0;
     function updateActiveHeading() {
-      let active = headings[0].id;
-      for (const heading of headings) {
-        const element = document.getElementById(heading.id);
-        if (element && element.getBoundingClientRect().top <= 190) active = heading.id;
-      }
-      setActiveHeadingId(active);
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const anchor = Math.min(190, window.innerHeight * 0.28);
+        let active = headings[0].id;
+        for (const heading of headings) {
+          const element = document.getElementById(heading.id);
+          if (element && element.getBoundingClientRect().top <= anchor) active = heading.id;
+        }
+        if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) active = headings.at(-1)?.id ?? active;
+        setActiveHeadingId(active);
+      });
     }
     updateActiveHeading();
     window.addEventListener("scroll", updateActiveHeading, { passive: true });
     window.addEventListener("resize", updateActiveHeading);
-    return () => { window.removeEventListener("scroll", updateActiveHeading); window.removeEventListener("resize", updateActiveHeading); };
+    return () => { window.cancelAnimationFrame(frame); window.removeEventListener("scroll", updateActiveHeading); window.removeEventListener("resize", updateActiveHeading); };
   }, [headings]);
 
   useEffect(() => {
-    const item = tocItemRefs.current[activeHeadingId];
     const container = tocLinksRef.current;
+    const item = tocItemRefs.current[activeHeadingId];
     if (!item || !container) { setIndicator({ top: 0, height: 0 }); return; }
-    setIndicator({ top: item.offsetTop, height: item.offsetHeight });
+    const updateIndicator = () => {
+      const itemRect = item.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      setIndicator({ top: itemRect.top - containerRect.top, height: itemRect.height });
+    };
+    updateIndicator();
+    const observer = new ResizeObserver(updateIndicator);
+    observer.observe(container);
+    observer.observe(item);
+    window.addEventListener("resize", updateIndicator);
+    return () => { observer.disconnect(); window.removeEventListener("resize", updateIndicator); };
   }, [activeHeadingId, headings, admin]);
 
   function currentSnapshot(): EditorSnapshot {
@@ -861,6 +903,66 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
     if (created) { setCategory(targetCategory); setPage(1); setPost(created); setRefreshKey((value) => value + 1); }
   }
 
+  async function importDocumentFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setImporting(true);
+    setImportError("");
+    const targetCategory = category === "전체 콘텐츠" ? categoryOptions[0]?.id || "업무 자동화" : category;
+    try {
+      const importResponse = await fetch("/api/import-document", {
+        method: "POST",
+        headers: {
+          "content-type": file.type || "application/octet-stream",
+          "x-ai-coe-file-name": encodeURIComponent(file.name),
+        },
+        body: file,
+      });
+      if (importResponse.status === 401) { window.location.reload(); return; }
+      const imported = await importResponse.json().catch(() => ({})) as ImportedDocumentResult & { error?: string };
+      if (!importResponse.ok) throw new Error(imported.error || `문서 가져오기에 실패했습니다. (${importResponse.status})`);
+
+      const importedPost = {
+        category: targetCategory,
+        title: imported.title,
+        excerpt: imported.excerpt,
+        readTime: imported.readTime,
+        tags: imported.tags,
+        cover: {
+          badge: "DOCUMENT IMPORT",
+          kicker: file.name.toUpperCase(),
+          titlePrimary: imported.title.slice(0, 18),
+          titleAccent: "AI CONTENT",
+          description: imported.excerpt,
+        },
+        blocks: [
+          ...imported.blocks,
+          { ...imported.attachment, size: formatFileSize(imported.attachment.size) },
+        ],
+      };
+      const createResponse = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(importedPost),
+      });
+      if (createResponse.status === 401) { window.location.reload(); return; }
+      const created = await createResponse.json().catch(() => ({})) as Post & { error?: string };
+      if (!createResponse.ok) throw new Error(created.error || "가져온 콘텐츠를 저장하지 못했습니다.");
+      setCategory(targetCategory);
+      setPage(1);
+      setPost(created);
+      resetHistory();
+      setSaved(true);
+      setRefreshKey((value) => value + 1);
+      window.setTimeout(() => setSaved(false), 2200);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "문서 가져오기에 실패했습니다.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function deletePost() {
     if (!post || !window.confirm(`‘${post.title}’ 게시물을 삭제할까요? 이 작업은 저장 후 되돌릴 수 없습니다.`)) return;
     const response = await fetch(`/api/posts?id=${encodeURIComponent(post.id)}`, { method: "DELETE" });
@@ -882,6 +984,7 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
         {admin && <button className="history-button" onClick={undoEdit} disabled={!historyCounts.undo} title="Ctrl/⌘ + Z">↶ 실행 취소</button>}
         {admin && <button className="history-button" onClick={redoEdit} disabled={!historyCounts.redo} title="Ctrl/⌘ + Y">↷ 다시 실행</button>}
         {admin && post && <button className="delete-post-button" onClick={deletePost}>콘텐츠 삭제</button>}
+        {admin && <label className={`document-import-button ${importing ? "is-loading" : ""}`}><FileUp size={15} aria-hidden="true" /><span>{importing ? "문서 변환 중…" : "문서로 콘텐츠 만들기"}</span><input ref={documentImportInput} type="file" accept={documentImportAccept} onChange={importDocumentFile} disabled={importing} /></label>}
         {admin && <button className="create-post-button" onClick={createPost} disabled={creating}>{creating ? "생성 중…" : "＋ 새 콘텐츠"}</button>}
         {admin && <button className="save-button" onClick={savePost} disabled={saving}>{saving ? "저장 중…" : saved ? "저장 완료 ✓" : "변경사항 저장"}</button>}
         {admin ? <a className="normal-mode-button" href={publicSiteUrl}>일반 모드로 이동</a> : <a className="admin-toggle" href={adminPortalUrl}><span>◇</span>관리자 모드</a>}
@@ -895,11 +998,11 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
             : <p className="nav-label">{siteSettings.exploreTitle}</p>}
           {categories.map((item) => admin
             ? <label key={item.id} className={`nav-edit-item ${category === item.id ? "active" : ""}`} onClick={() => { setCategory(item.id); setPage(1); }}>
-              <span>{item.icon}</span>
+              <CategoryIcon category={item} />
               <input value={item.label} onFocus={() => { setCategory(item.id); setPage(1); }} onChange={(event) => editSettings((current) => ({ ...current, categories: current.categories.map((categoryItem) => categoryItem.id === item.id ? { ...categoryItem, label: event.target.value } : categoryItem) }))} aria-label={`${item.label} 메뉴명 편집`} />
               {category === item.id && pagination.totalItems > 0 && <em>{pagination.totalItems}</em>}
             </label>
-            : <button key={item.id} className={category === item.id ? "active" : ""} onClick={() => { setCategory(item.id); setPage(1); }}><span>{item.icon}</span>{item.label}{category === item.id && pagination.totalItems > 0 && <em>{pagination.totalItems}</em>}</button>)}
+            : <button key={item.id} className={category === item.id ? "active" : ""} onClick={() => { setCategory(item.id); setPage(1); }}><CategoryIcon category={item} />{item.label}{category === item.id && pagination.totalItems > 0 && <em>{pagination.totalItems}</em>}</button>)}
           {admin && <button className="add-nav-item" onClick={addExploreCategory}>＋ 메뉴 추가</button>}
         </nav>
         <div className={`sidebar-card ${admin ? "sidebar-card-editing" : ""}`}><span>✦</span>{admin ? <><input value={siteSettings.ideaTitle} onChange={(event) => editSettings((current) => ({ ...current, ideaTitle: event.target.value }))} aria-label="아이디어 카드 제목 편집" /><textarea value={siteSettings.ideaDescription} onChange={(event) => editSettings((current) => ({ ...current, ideaDescription: event.target.value }))} aria-label="아이디어 카드 설명 편집" /><input value={siteSettings.ideaButtonLabel} onChange={(event) => editSettings((current) => ({ ...current, ideaButtonLabel: event.target.value }))} aria-label="아이디어 버튼 문구 편집" /></> : <><strong>{siteSettings.ideaTitle}</strong><p>{siteSettings.ideaDescription}</p><a href={ideaMailto}>{siteSettings.ideaButtonLabel}</a></>}</div>
@@ -963,8 +1066,8 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
           {admin ? <input className="toc-title-editor" value={post.tocTitle} onChange={(event) => editPost((current) => ({ ...current, tocTitle: event.target.value }))} aria-label="목차 제목 편집" /> : <p>{post.tocTitle}</p>}
           <div className="toc-links" ref={tocLinksRef}><div className="toc-progress"><span style={{ top: indicator.top, height: indicator.height }} /></div>
             {headings.map((heading, index) => <div key={heading.id} ref={(element) => { tocItemRefs.current[heading.id] = element; }} className={`toc-row ${admin ? "admin-toc-row" : ""} ${activeHeadingId === heading.id ? "active" : ""}`}>
-              {admin && "text" in heading ? <><a className="toc-number-link" href={`#${heading.id}`} onClick={() => setActiveHeadingId(heading.id)} aria-label={`${index + 1}번 본문으로 이동`}><span>{String(index + 1).padStart(2, "0")}</span></a><textarea value={plainRichText(heading.text)} rows={Math.max(1, plainRichText(heading.text).split("\n").length)} onFocus={() => setActiveHeadingId(heading.id)} onChange={(event) => updateBlock(heading.id, { ...heading, text: event.target.value })} aria-label={`${index + 1}번 목차 편집`} /></>
-                : <a href={`#${heading.id}`} onClick={() => setActiveHeadingId(heading.id)}><span>{String(index + 1).padStart(2, "0")}</span><span className="toc-label">{"text" in heading ? plainRichText(heading.text) : ""}</span></a>}
+              {admin && "text" in heading ? <><a className="toc-number-link" href={`#${heading.id}`} onClick={(event) => { event.preventDefault(); setActiveHeadingId(heading.id); document.getElementById(heading.id)?.scrollIntoView({ behavior: "smooth", block: "start" }); }} aria-label={`${index + 1}번 본문으로 이동`}><span>{String(index + 1).padStart(2, "0")}</span></a><textarea value={plainRichText(heading.text)} rows={Math.max(1, plainRichText(heading.text).split("\n").length)} onFocus={() => setActiveHeadingId(heading.id)} onChange={(event) => updateBlock(heading.id, { ...heading, text: event.target.value })} aria-label={`${index + 1}번 목차 편집`} /></>
+                : <a href={`#${heading.id}`} onClick={(event) => { event.preventDefault(); setActiveHeadingId(heading.id); document.getElementById(heading.id)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}><span>{String(index + 1).padStart(2, "0")}</span><span className="toc-label">{"text" in heading ? plainRichText(heading.text) : ""}</span></a>}
             </div>)}
           </div>
           {admin && <div className="toc-add"><input value={newTocTitle} onChange={(event) => setNewTocTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addTocHeading(); }} placeholder="목차와 본문 제목 추가" /><button onClick={addTocHeading}>＋</button></div>}
@@ -972,6 +1075,7 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
       </aside>
     </div>
     {coverLightboxOpen && cover.imageUrl && <ImageLightbox url={cover.imageUrl} alt="게시물 커버" onClose={() => setCoverLightboxOpen(false)} />}
+    {importError && <div className="import-error-toast" role="alert"><strong>문서 가져오기 실패</strong><span>{importError}</span><button onClick={() => setImportError("")} aria-label="오류 닫기">×</button></div>}
     {loading && <div className="loading-toast">콘텐츠를 불러오는 중…</div>}
   </div>;
 }

@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the AI CoE knowledge hub and backend routes", async () => {
-  const [client, content, postsApi, settingsApi, siteSettings, schema, settingsMigration, coverMigration, filesApi, uploadApi, adminAuth, adminPage, adminProxy, hosting] = await Promise.all([
+  const [client, content, postsApi, settingsApi, siteSettings, schema, settingsMigration, coverMigration, uploadApi, fileStorage, importApi, documentImport, adminAuth, adminPage, adminProxy, hosting] = await Promise.all([
     readFile(new URL("../app/AICoeHub.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/content.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/posts/route.ts", import.meta.url), "utf8"),
@@ -12,8 +12,10 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0002_pale_scarlet_spider.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0003_gorgeous_nextwave.sql", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/files/[...key]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/files/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/file-storage.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/import-document/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/document-import.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/admin-auth.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../cloudflare/admin-proxy-worker.js", import.meta.url), "utf8"),
@@ -59,6 +61,12 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(client, /length > 20/);
   assert.match(client, /deletePost/);
   assert.match(client, /ideaRecipients\.join\(";%20"\)/);
+  assert.match(client, /BookOpen/);
+  assert.match(client, /GraduationCap/);
+  assert.match(client, /문서로 콘텐츠 만들기/);
+  assert.match(client, /\/api\/import-document/);
+  assert.match(client, /getBoundingClientRect/);
+  assert.match(client, /ResizeObserver/);
   assert.doesNotMatch(client, /백엔드에 저장된 게시물/);
   assert.doesNotMatch(client, /실습 가이드/);
   assert.match(client, /navigator\.clipboard\.writeText/);
@@ -83,13 +91,19 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(schema, /cover: text\("cover"\)/);
   assert.match(settingsMigration, /CREATE TABLE `site_settings`/);
   assert.match(coverMigration, /ALTER TABLE `posts` ADD `cover`/);
-  assert.match(filesApi, /bucket\.put/);
+  assert.match(fileStorage, /bucket\.put/);
   assert.match(client, /x-ai-coe-file-name/);
   assert.match(client, /body: file/);
   assert.match(uploadApi, /request\.arrayBuffer/);
   assert.match(uploadApi, /multipart\/form-data/);
   assert.match(uploadApi, /R2 upload failed/);
   assert.match(uploadApi, /isAdminUser/);
+  assert.match(importApi, /DOCX, PPTX, PDF/);
+  assert.match(importApi, /storeUpload/);
+  assert.match(importApi, /isAdminUser/);
+  assert.match(documentImport, /parseDocx/);
+  assert.match(documentImport, /parsePptx/);
+  assert.match(documentImport, /extractText/);
   assert.match(adminAuth, /cf-access-jwt-assertion/);
   assert.match(adminAuth, /RSASSA-PKCS1-v1_5/);
   assert.match(adminAuth, /ADMIN_EMAILS/);
@@ -104,6 +118,7 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(adminProxy, /request\.body/);
   assert.match(adminProxy, /headers\.delete\("content-length"\)/);
   assert.match(adminProxy, /cache-control/);
+  assert.match(adminProxy, /getSetCookie/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "FILES"/);
 });
