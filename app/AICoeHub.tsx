@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, FileUp, GraduationCap, House, Sparkles, TrendingUp, Zap } from "lucide-react";
+import { BookOpen, FileUp, GraduationCap, House, ListPlus, ListX, Sparkles, TrendingUp, Zap } from "lucide-react";
 import { defaultPostCover, seedPost, type ContentBlock, type Post, type TableBlock, type TextBlock } from "./content";
 import { defaultSiteSettings, type SiteCategory, type SiteSettings } from "./site-settings";
 
@@ -206,7 +206,7 @@ function CopyButton({ value }: { value: string }) {
   return <button className="copy-button" onClick={copy} aria-label="코드 복사">{copied ? "복사 완료" : "복사"}</button>;
 }
 
-function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplaceFile, onPasteImage, onSlashCommand, onDragStart, onDragEnter, onDrop, onDragEnd, isDragging, isDropTarget }: {
+function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplaceFile, onPasteImage, onSlashCommand, onTocAction, onActivateHeading, onDragStart, onDragEnter, onDrop, onDragEnd, isDragging, isDropTarget, isTocActive }: {
   block: ContentBlock;
   editing: boolean;
   onChange: (next: ContentBlock) => void;
@@ -215,12 +215,15 @@ function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplac
   onReplaceFile: (file: File) => void;
   onPasteImage: (file: File) => void;
   onSlashCommand: (type: SlashCommandType) => void;
+  onTocAction: (action: "show" | "hide" | "promote") => void;
+  onActivateHeading: () => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
   onDragEnter: () => void;
   onDrop: () => void;
   onDragEnd: () => void;
   isDragging: boolean;
   isDropTarget: boolean;
+  isTocActive: boolean;
 }) {
   const textEditorRef = useRef<HTMLTextAreaElement>(null);
   const richEditorRef = useRef<HTMLSpanElement>(null);
@@ -374,9 +377,13 @@ function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplac
   }
 
   const textSize = "textSize" in block ? block.textSize ?? "normal" : "normal";
-  return <div id={block.id} className={`content-block text-size-${textSize} ${editing ? "is-editing" : ""} ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""}`}
+  return <div id={block.id} className={`content-block text-size-${textSize} ${editing ? "is-editing" : ""} ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""} ${isTocActive ? "is-toc-active" : ""}`}
+    onFocusCapture={() => { if (editing && block.type === "heading" && !block.tocHidden) onActivateHeading(); }}
     onDragOver={(event) => { if (editing) event.preventDefault(); }} onDragEnter={() => editing && onDragEnter()} onDrop={(event) => { if (editing) { event.preventDefault(); onDrop(); } }}>
-    {editing && <div className="block-controls"><button className="drag-handle" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} aria-label="블록 순서 이동">⋮⋮</button><button className="delete-block" onClick={onDelete} aria-label="블록 삭제">×</button></div>}
+    {editing && <div className="block-controls"><button className="drag-handle" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} aria-label="블록 순서 이동" title="블록 순서 이동">⋮⋮</button>
+      {block.type === "heading" ? <button className={`toc-block-toggle ${block.tocHidden ? "is-hidden" : ""}`} onClick={() => onTocAction(block.tocHidden ? "show" : "hide")} aria-label={block.tocHidden ? "목차에 다시 표시" : "목차에서 제외"} title={block.tocHidden ? "목차에 다시 표시" : "목차에서 제외"}>{block.tocHidden ? <ListPlus size={15} /> : <ListX size={15} />}</button>
+        : block.type === "paragraph" && <button className="toc-block-toggle" onClick={() => onTocAction("promote")} aria-label="본문 제목 및 목차로 지정" title="본문 제목 및 목차로 지정"><ListPlus size={15} /></button>}
+      <button className="delete-block" onClick={onDelete} aria-label="블록 삭제" title="블록 삭제">×</button></div>}
     {content}
     {inlineSlashOpen && <div className="inline-slash-menu" onMouseDown={(event) => event.preventDefault()}><p>블록 추가 · → 진입 · ↑↓ 이동 · Enter/Space 선택</p>{slashOptions.map((option, index) => <button key={option.type} className={slashKeyboard.activeIndex === index ? "keyboard-active" : ""} onMouseEnter={() => slashKeyboard.setActiveIndex(index)} onClick={() => chooseInlineSlash(option.type)}><span>{option.symbol}</span><div><strong>{option.label}</strong><small>{option.hint}</small></div></button>)}</div>}
     {inlineFormatOpen && <TextFormatMenu onCommand={applyBlockFormat} activeIndex={formatKeyboard.activeIndex} onActiveIndexChange={formatKeyboard.setActiveIndex} />}
@@ -481,7 +488,8 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
     return () => controller.abort();
   }, []);
 
-  const headings = useMemo(() => post?.blocks.filter((block) => block.type === "heading") ?? [], [post?.blocks]);
+  const headings = useMemo(() => post?.blocks.filter((block) => block.type === "heading" && !block.tocHidden) ?? [], [post?.blocks]);
+  const hiddenHeadings = useMemo(() => post?.blocks.filter((block) => block.type === "heading" && block.tocHidden) ?? [], [post?.blocks]);
   const showFormatMenu = Boolean(findTriggerAtCursor(draftTriggerContext.text, draftTriggerContext.cursor, "format"));
   const showSlashMenu = !showFormatMenu && Boolean(findTriggerAtCursor(draftTriggerContext.text, draftTriggerContext.cursor, "slash"));
   const draftSlashKeyboard = useCommandMenu(showSlashMenu, slashOptions.length, (index) => chooseDraftSlash(slashOptions[index].type));
@@ -617,6 +625,20 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
 
   function updateBlock(id: string, next: ContentBlock) {
     editPost((current) => ({ ...current, blocks: current.blocks.map((block) => block.id === id ? next : block) }));
+  }
+
+  function updateTocMembership(block: ContentBlock, action: "show" | "hide" | "promote") {
+    if (!("text" in block)) return;
+    const next = action === "promote" ? { ...block, type: "heading" as const, tocHidden: false }
+      : { ...block, tocHidden: action === "hide" };
+    updateBlock(block.id, next);
+    if (action === "hide") {
+      const nextVisible = headings.find((heading) => heading.id !== block.id);
+      setActiveHeadingId(nextVisible?.id ?? "");
+    } else {
+      setActiveHeadingId(block.id);
+      window.requestAnimationFrame(() => document.getElementById(block.id)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    }
   }
 
   function insertParagraphAfter(id: string) {
@@ -773,9 +795,16 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
   function addTocHeading() {
     if (!newTocTitle.trim()) return;
     const block: ContentBlock = { id: `heading-${Date.now()}`, type: "heading", text: newTocTitle.trim() };
-    editPost((current) => ({ ...current, blocks: [...current.blocks, block] }));
+    editPost((current) => {
+      const blocks = [...current.blocks];
+      const activeIndex = blocks.findIndex((item) => item.id === activeHeadingId);
+      if (activeIndex >= 0) blocks.splice(activeIndex + 1, 0, block);
+      else blocks.push(block);
+      return { ...current, blocks };
+    });
     setNewTocTitle("");
     setActiveHeadingId(block.id);
+    window.requestAnimationFrame(() => document.getElementById(block.id)?.scrollIntoView({ behavior: "smooth", block: "center" }));
   }
 
   function addExploreCategory() {
@@ -1040,8 +1069,9 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
                 {post.blocks.map((block) => <BlockView key={block.id} block={block} editing={admin} onChange={(next) => updateBlock(block.id, next)}
                   onDelete={() => editPost((current) => ({ ...current, blocks: current.blocks.filter((item) => item.id !== block.id) }))} onInsertAfter={() => insertParagraphAfter(block.id)} onReplaceFile={(file) => replaceBlockFile(block, file)} onPasteImage={(file) => pasteImage(file, block.id)}
                   onSlashCommand={(type) => handleInlineSlash(block.id, type)}
+                  onTocAction={(action) => updateTocMembership(block, action)} onActivateHeading={() => setActiveHeadingId(block.id)}
                   onDragStart={(event) => { setDraggedId(block.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", block.id); }} onDragEnter={() => draggedId && setDropTargetId(block.id)}
-                  onDrop={() => { if (draggedId) moveBlock(draggedId, block.id); setDraggedId(null); setDropTargetId(null); }} onDragEnd={() => { setDraggedId(null); setDropTargetId(null); }} isDragging={draggedId === block.id} isDropTarget={dropTargetId === block.id && draggedId !== block.id} />)}
+                  onDrop={() => { if (draggedId) moveBlock(draggedId, block.id); setDraggedId(null); setDropTargetId(null); }} onDragEnd={() => { setDraggedId(null); setDropTargetId(null); }} isDragging={draggedId === block.id} isDropTarget={dropTargetId === block.id && draggedId !== block.id} isTocActive={admin && block.type === "heading" && !block.tocHidden && activeHeadingId === block.id} />)}
               </div>
 
               {admin && <div className="slash-editor">
@@ -1066,11 +1096,12 @@ export function AICoeHub({ initialAdmin = false, adminPortalUrl = "/admin" }: { 
           {admin ? <input className="toc-title-editor" value={post.tocTitle} onChange={(event) => editPost((current) => ({ ...current, tocTitle: event.target.value }))} aria-label="목차 제목 편집" /> : <p>{post.tocTitle}</p>}
           <div className="toc-links" ref={tocLinksRef}><div className="toc-progress"><span style={{ top: indicator.top, height: indicator.height }} /></div>
             {headings.map((heading, index) => <div key={heading.id} ref={(element) => { tocItemRefs.current[heading.id] = element; }} className={`toc-row ${admin ? "admin-toc-row" : ""} ${activeHeadingId === heading.id ? "active" : ""}`}>
-              {admin && "text" in heading ? <><a className="toc-number-link" href={`#${heading.id}`} onClick={(event) => { event.preventDefault(); setActiveHeadingId(heading.id); document.getElementById(heading.id)?.scrollIntoView({ behavior: "smooth", block: "start" }); }} aria-label={`${index + 1}번 본문으로 이동`}><span>{String(index + 1).padStart(2, "0")}</span></a><textarea value={plainRichText(heading.text)} rows={Math.max(1, plainRichText(heading.text).split("\n").length)} onFocus={() => setActiveHeadingId(heading.id)} onChange={(event) => updateBlock(heading.id, { ...heading, text: event.target.value })} aria-label={`${index + 1}번 목차 편집`} /></>
+              {admin && "text" in heading ? <><a className="toc-number-link" href={`#${heading.id}`} onClick={(event) => { event.preventDefault(); setActiveHeadingId(heading.id); document.getElementById(heading.id)?.scrollIntoView({ behavior: "smooth", block: "start" }); }} aria-label={`${index + 1}번 본문으로 이동`}><span>{String(index + 1).padStart(2, "0")}</span></a><textarea value={plainRichText(heading.text)} rows={Math.max(1, plainRichText(heading.text).split("\n").length)} onFocus={() => setActiveHeadingId(heading.id)} onChange={(event) => updateBlock(heading.id, { ...heading, text: event.target.value })} aria-label={`${index + 1}번 목차 편집`} /><button className="toc-remove-button" onClick={() => updateTocMembership(heading, "hide")} aria-label={`${index + 1}번 목차에서 제거`} title="목차에서 제거"><ListX size={14} /></button></>
                 : <a href={`#${heading.id}`} onClick={(event) => { event.preventDefault(); setActiveHeadingId(heading.id); document.getElementById(heading.id)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}><span>{String(index + 1).padStart(2, "0")}</span><span className="toc-label">{"text" in heading ? plainRichText(heading.text) : ""}</span></a>}
             </div>)}
           </div>
-          {admin && <div className="toc-add"><input value={newTocTitle} onChange={(event) => setNewTocTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addTocHeading(); }} placeholder="목차와 본문 제목 추가" /><button onClick={addTocHeading}>＋</button></div>}
+          {admin && <div className="toc-add"><input value={newTocTitle} onChange={(event) => setNewTocTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addTocHeading(); }} placeholder="현재 본문 위치에 제목 추가" /><button onClick={addTocHeading} aria-label="현재 본문 위치에 제목 추가" title="현재 선택한 제목 다음에 추가"><ListPlus size={15} /></button></div>}
+          {admin && hiddenHeadings.length > 0 && <div className="toc-hidden-list"><span>목차 제외</span>{hiddenHeadings.map((heading) => <button key={heading.id} onClick={() => updateTocMembership(heading, "show")} title="목차에 다시 표시"><ListPlus size={13} /><em>{"text" in heading ? plainRichText(heading.text) : ""}</em></button>)}</div>}
         </div>}
       </aside>
     </div>

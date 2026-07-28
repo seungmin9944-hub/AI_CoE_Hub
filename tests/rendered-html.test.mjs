@@ -36,7 +36,7 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(client, /ideaMailto/);
   assert.match(client, /pagination\.hasPrevious/);
   assert.match(client, /drag-handle/);
-  assert.match(client, /목차와 본문 제목 추가/);
+  assert.match(client, /현재 본문 위치에 제목 추가/);
   assert.match(client, /activeHeadingId/);
   assert.match(client, /inline-slash-menu/);
   assert.match(client, /TextFormatMenu/);
@@ -67,12 +67,18 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(client, /\/api\/import-document/);
   assert.match(client, /getBoundingClientRect/);
   assert.match(client, /ResizeObserver/);
+  assert.match(client, /tocHidden/);
+  assert.match(client, /updateTocMembership/);
+  assert.match(client, /목차에서 제거/);
+  assert.match(client, /현재 본문 위치에 제목 추가/);
+  assert.match(client, /본문 제목 및 목차로 지정/);
   assert.doesNotMatch(client, /백엔드에 저장된 게시물/);
   assert.doesNotMatch(client, /실습 가이드/);
   assert.match(client, /navigator\.clipboard\.writeText/);
   assert.match(content, /엑셀 보고서의 종말 선언/);
   assert.match(content, /category: "업무 자동화"/);
   assert.match(content, /textSize\?:/);
+  assert.match(content, /tocHidden\?:/);
   assert.match(content, /type: "link"/);
   assert.match(postsApi, /CREATE TABLE IF NOT EXISTS posts/);
   assert.match(postsApi, /totalPages/);

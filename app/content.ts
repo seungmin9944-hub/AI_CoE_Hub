@@ -3,6 +3,7 @@ export type TextBlock = {
   type: "paragraph" | "heading" | "callout" | "code";
   text: string;
   textSize?: "small" | "normal" | "large" | "xlarge";
+  tocHidden?: boolean;
   language?: string;
   tone?: "info" | "warning" | "success";
 };
