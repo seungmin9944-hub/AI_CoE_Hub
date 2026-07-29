@@ -3,8 +3,9 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the AI CoE knowledge hub and backend routes", async () => {
-  const [client, content, postsApi, settingsApi, siteSettings, schema, settingsMigration, coverMigration, uploadApi, fileStorage, importApi, documentImport, adminAuth, adminPage, adminProxy, hosting] = await Promise.all([
+  const [client, styles, content, postsApi, settingsApi, siteSettings, schema, settingsMigration, coverMigration, uploadApi, fileStorage, importApi, documentImport, adminAuth, adminPage, adminProxy, hosting] = await Promise.all([
     readFile(new URL("../app/AICoeHub.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/content.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/posts/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/settings/route.ts", import.meta.url), "utf8"),
@@ -32,6 +33,9 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.match(client, /caption: "", width: 100/);
   assert.match(client, /행 추가/);
   assert.match(client, /열 추가/);
+  assert.match(client, /<textarea value=\{cell\}/);
+  assert.match(client, /cell\.split\("\\n"\)/);
+  assert.doesNotMatch(client, /<input value=\{cell\}/);
   assert.match(client, /PDF, PPT, PNG, XLSX/);
   assert.match(client, /ideaMailto/);
   assert.match(client, /pagination\.hasPrevious/);
@@ -75,6 +79,9 @@ test("builds the AI CoE knowledge hub and backend routes", async () => {
   assert.doesNotMatch(client, /백엔드에 저장된 게시물/);
   assert.doesNotMatch(client, /실습 가이드/);
   assert.match(client, /navigator\.clipboard\.writeText/);
+  assert.match(styles, /font-size:var\(--paragraph-size,16\.1px\)/);
+  assert.match(styles, /td textarea,th textarea/);
+  assert.match(styles, /white-space:pre-wrap/);
   assert.match(content, /엑셀 보고서의 종말 선언/);
   assert.match(content, /category: "업무 자동화"/);
   assert.match(content, /textSize\?:/);

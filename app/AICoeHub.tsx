@@ -368,7 +368,7 @@ function BlockView({ block, editing, onChange, onDelete, onInsertAfter, onReplac
       {editing && <tr className="column-controls">{Array.from({ length: columnCount }, (_, columnIndex) => <th key={columnIndex}><span>{columnIndex + 1}열</span><button onClick={() => updateRows(normalizedRows.map((row) => row.filter((_, index) => index !== columnIndex)))} disabled={columnCount <= 1} aria-label={`${columnIndex + 1}열 삭제`}>×</button></th>)}<th className="row-control-heading">행</th></tr>}
       {normalizedRows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => {
         const Tag = !editing && rowIndex === 0 ? "th" : "td";
-        return <Tag key={cellIndex} className={editing && rowIndex === 0 ? "editable-header-cell" : ""}>{editing ? <input value={cell} onChange={(event) => {
+        return <Tag key={cellIndex} className={editing && rowIndex === 0 ? "editable-header-cell" : ""}>{editing ? <textarea value={cell} rows={Math.max(1, cell.split("\n").length)} onChange={(event) => {
           const rows = normalizedRows.map((current, r) => current.map((value, c) => r === rowIndex && c === cellIndex ? event.target.value : value));
           updateRows(rows);
         }} aria-label={`${rowIndex + 1}행 ${cellIndex + 1}열`} /> : cell}</Tag>;

@@ -195,12 +195,12 @@ button { cursor:pointer; }
 .table-wrap { overflow:auto; border:1px solid #e1e3e7; border-radius:10px; }
 .table-toolbar { position:sticky; left:0; display:flex; align-items:center; gap:7px; min-width:max-content; padding:9px 10px; border-bottom:1px solid #eadfd8; background:#fff9f5; }
 .table-toolbar span { margin-right:auto; color:#95684d; font-size:10.35px; font-weight:800; }.table-toolbar button { height:29px; border:1px solid #efc6ad; border-radius:6px; background:#fff; color:#d85b12; padding:0 10px; font-size:10.35px; font-weight:700; }
-table { width:100%; border-collapse:collapse; font-size:13.8px; }
-th,td { border-bottom:1px solid #e7e9ec; padding:12px 14px; text-align:left; }
-th { background:#f5f6f8; font-size:11.5px; color:#646a74; }
+table { width:100%; border-collapse:collapse; font-size:var(--paragraph-size,16.1px); line-height:1.75; }
+th,td { border-bottom:1px solid #e7e9ec; padding:12px 14px; text-align:left; vertical-align:top; white-space:pre-wrap; overflow-wrap:anywhere; }
+th { background:#f5f6f8; color:#646a74; }
 tr:last-child td { border-bottom:0; }
-td input,th input { width:100%; border:0; outline:0; background:transparent; }
-.table-editing table { min-width:520px; }.table-editing td,.table-editing th { min-width:120px; padding:9px 10px; }.table-editing td input { min-height:30px; padding:4px 6px; border:1px solid transparent; border-radius:5px; }.table-editing td input:focus { border-color:#efb08a; background:#fff; box-shadow:0 0 0 2px rgba(243,115,33,.1); }
+td textarea,th textarea { width:100%; min-height:1.75em; border:0; outline:0; resize:vertical; field-sizing:content; background:transparent; color:inherit; padding:0; font:inherit; line-height:inherit; white-space:pre-wrap; overflow-wrap:anywhere; }
+.table-editing table { min-width:520px; }.table-editing td,.table-editing th { min-width:120px; padding:9px 10px; }.table-editing td textarea,.table-editing th textarea { min-height:38px; padding:6px 8px; border:1px solid transparent; border-radius:5px; }.table-editing td textarea:focus,.table-editing th textarea:focus { border-color:#efb08a; background:#fff; box-shadow:0 0 0 2px rgba(243,115,33,.1); }
 .table-editing .editable-header-cell { background:#f5f6f8; font-weight:700; }.column-controls th { min-width:120px; padding:6px 8px; background:#fff9f5; border-bottom:1px dashed #edc7af; color:#95684d; }.column-controls th span { font-size:9.2px; }.column-controls th button,.row-control button { float:right; width:22px; height:22px; border:0; border-radius:5px; background:#f0f1f3; color:#8d9299; }.column-controls th button:hover,.row-control button:hover { color:#b43b2c; background:#fff0ee; }.column-controls th button:disabled,.row-control button:disabled { opacity:.3; }.column-controls .row-control-heading,.row-control { min-width:46px; width:46px; text-align:center; }.row-control { padding:8px!important; border-left:1px dashed #e3d5cc; }
 .article-image img { max-width:100%; border-radius:9px; display:block; }.article-image figcaption,.article-image input { display:block; width:100%; border:0; color:#8b9098; font-size:11.5px; text-align:center; margin-top:8px; }
 .is-editing { outline:1px dashed transparent; }.is-editing:hover { outline-color:#f0b28c; }
